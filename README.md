@@ -4,7 +4,7 @@ Aplicativo web de **desafio de dieta e treino** (28 dias): rotina diária, cart�
 
 ## Demo online (GitHub Pages)
 
-**Interface celular:** [https://thiagod11lopes-ops.github.io/perfect/celular](https://thiagod11lopes-ops.github.io/perfect/celular)
+**Interface celular:** [https://thiagod11lopes-ops.github.io/perfect/celular/](https://thiagod11lopes-ops.github.io/perfect/celular/) (sem barra final também abre o app via fallback SPA)
 
 ## Desenvolvimento
 
