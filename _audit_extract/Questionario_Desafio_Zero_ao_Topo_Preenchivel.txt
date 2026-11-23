@@ -1,0 +1,17 @@
+--- PAGE 1 ---
+QUESTIONÁRIO DE INSCRIÇÃO
+Dr. Cristiano Santos  |  28 dias
+Preencha os campos abaixo e envie este PDF preenchido.
+01  Nome completo
+02  Data de nascimento (DD/MM/AAAA)
+03  Idade
+04  Sexo
+05  Peso atual (kg)
+06  Altura (cm)
+07  Quantos kg deseja perder?
+08  Tem algum problema de saúde? Qual?
+09  Toma algum medicamento? Qual?
+10  Tem alguma alergia alimentar? Qual?
+Dados de saúde: enviar apenas ao canal privado indicado pela organização.
+DESAFIO DO ZERO AO TOPO
+DR. CRISTIANO SANTOS

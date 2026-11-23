@@ -1,0 +1,214 @@
+/* Replay screen: the set's video with the tracked skeleton, over the result.
+   Its layer keeps its own opaque ground and fades in whole, as the report does. */
+.wv-experience:has(.replay-screen) { background: var(--c-surface); animation: screen-in 0.6s var(--ease) backwards; }
+.wv-experience .replay-screen.is-active { animation: none; }
+/* The column fills the screen, so the picture takes all the height the controls leave. */
+.wv-experience .replay-screen .wrap { height: 100%; min-height: 0; }
+
+.wv-experience .rp-mocap-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 4px 10px;
+  background: var(--well);
+  border: 1px solid var(--c-accent);
+  border-radius: var(--r-s);
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c-accent);
+  cursor: pointer;
+  margin-left: auto;
+  margin-right: 8px;
+}
+
+/* The picture is the screen's subject: never under 46 % of the screen's height, even on a 4.7-inch iPhone in Safari,
+   where the controls left it 180 px (David's screenshots, 4 October); the share action and the note scroll under it. */
+.wv-experience .rp-stage { flex: 1 1 0; min-height: max(180px, 46svh); margin-top: 10px; container-type: size; display: grid; place-items: center; }
+/* The frame has the video's own shape, as large as the stage allows. */
+.wv-experience .rp-frame {
+  position: relative; overflow: hidden; border-radius: var(--r-l); background: var(--video-well);
+  width: min(100cqw, 100cqh * var(--ar, 0.5625)); height: min(100cqh, 100cqw / var(--ar, 0.5625));
+  box-shadow: 0 0 0 1px var(--c-rule);
+}
+.wv-experience .rp-video, .wv-experience .rp-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.wv-experience .rp-video { object-fit: contain; background: var(--video-well); cursor: pointer; }
+.wv-experience .rp-canvas { pointer-events: none; }
+
+/* The rep on screen, counted as it begins, and its phase. */
+.wv-experience .rp-chip {
+  position: absolute; top: 8px; left: 8px; pointer-events: none;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 5px 10px 6px; border-radius: var(--r-s); background: rgba(8, 7, 6, 0.55);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+
+/* Responsive HUD overlay on replay video stage, aligned top-right to prevent collision with rp-chip */
+.wv-experience .rp-frame .rc-stage-hud {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  max-width: calc(62% - 16px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  z-index: 4;
+  pointer-events: none;
+}
+.wv-experience .rp-frame .rc-hud-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--r-s);
+  background: color-mix(in srgb, var(--void) 84%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--hair-2);
+  font: 500 var(--fs-label)/1.2 var(--sans);
+  color: var(--bone);
+  white-space: nowrap;
+}
+.wv-experience .rp-frame .rc-hud-item.is-off {
+  border-color: color-mix(in srgb, var(--lamp) 70%, transparent);
+  background: color-mix(in srgb, var(--void) 85%, var(--lamp) 15%);
+}
+.wv-experience .rp-frame .rc-hud-item.is-off .rc-hud-delta {
+  color: var(--lamp);
+  font-weight: 700;
+}
+.wv-experience .rp-frame .rc-hud-item.is-ok .rc-hud-delta {
+  color: var(--bone-2);
+}
+.wv-experience .rp-frame .rc-hud-name {
+  font-weight: 600;
+  color: var(--bone);
+}
+.wv-experience .rp-frame .rc-hud-angles {
+  font-variant-numeric: tabular-nums;
+  color: var(--ash);
+}
+.wv-experience .rp-frame .rc-hud-delta {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+}
+.wv-experience .rp-frame .rc-hud-unseen {
+  color: var(--ash);
+  font-style: italic;
+}
+.wv-experience .rp-count { display: flex; align-items: baseline; gap: 4px; }
+.wv-experience .rp-n {
+  font-family: var(--numeral-face); font-weight: var(--numeral-weight); font-size: var(--fs-rp-n); line-height: 0.95; font-variant-numeric: lining-nums tabular-nums;
+  color: var(--numeral-colour);
+}
+.wv-experience .rp-of { font-family: var(--mono); font-size: var(--fs-label); color: var(--c-fg-muted); }
+/* As wide as its longest word, so the chip keeps its size from phase to phase. */
+/* The phase word at the label size: 8.5 px was below reading size (#28). */
+.wv-experience .rp-chip.is-idle .rp-phase { display: none; } /* between reps the chip holds the count alone, no empty band */
+.wv-experience .rp-phase { min-width: 11.6ch; font-family: var(--mono); font-size: var(--fs-label); letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-accent); }
+.wv-experience .rp-angle {
+  font-family: var(--mono); font-size: var(--fs-label); letter-spacing: 0.06em; color: var(--bone);
+  display: flex; align-items: baseline; gap: 3px; margin-top: 1px;
+}
+.wv-experience .rp-broken { position: absolute; inset: 0; margin: 0; display: grid; place-items: center; padding: 24px; text-align: center; font-size: var(--fs-body); line-height: 1.5; color: var(--bone-2); background: rgba(8, 7, 6, 0.7); text-wrap: balance; }
+
+/* The set's time line: one mark per rep; the lit one is on screen. */
+.wv-experience .rp-line { position: relative; height: 44px; margin-top: 8px; cursor: pointer; touch-action: none; border-radius: 10px; flex: none; }
+.wv-experience .rp-line::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; border-radius: 1px; background: var(--hair-2); }
+.wv-experience .rp-rep { position: absolute; top: 50%; height: 10px; margin-top: -5px; border-radius: 5px; background: rgba(232, 189, 126, 0.34); transition: background var(--d-fast) var(--ease), box-shadow var(--d-fast) var(--ease); }
+.wv-experience .rp-rep.is-on { background: var(--lamp-hi); box-shadow: 0 0 12px rgba(247, 220, 174, 0.55); }
+.wv-experience .rp-now { position: absolute; top: 9px; bottom: 9px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--c-fg); pointer-events: none; }
+.wv-experience .rp-inflection-pin,
+.wv-experience .rp-stickingpin {
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: var(--c-accent);
+  box-shadow: 0 0 6px var(--c-accent);
+  pointer-events: none;
+  z-index: 2;
+  transition: transform var(--d-fast) var(--ease), box-shadow var(--d-fast) var(--ease);
+}
+.wv-experience .rp-inflection-pin.is-active,
+.wv-experience .rp-stickingpin.is-active {
+  transform: scale(1.6);
+  box-shadow: 0 0 10px var(--c-accent);
+}
+
+.wv-experience .rp-detail { flex: none; min-height: 19px; margin: 2px 0 0; text-align: center; font-size: var(--fs-caption); line-height: 1.45; font-variant-numeric: tabular-nums; color: var(--c-fg-muted); text-wrap: balance; }
+.wv-experience .rp-prov { flex: none; margin: 4px 0 0; text-align: center; font-size: var(--fs-caption); line-height: 1.45; color: inherit; text-wrap: balance; }
+
+.wv-experience .rp-controls { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: var(--s-3); }
+.wv-experience .rp-views { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 12px; margin-top: 8px; }
+.wv-experience .rp-views .btn-ghost { height: 40px; font-size: var(--fs-caption); }
+.wv-experience .rp-views :disabled { opacity: 0.4; cursor: default; }
+.wv-experience .rp-controls .btn-primary, .wv-experience .rp-controls .btn-ghost { height: 52px; }
+.wv-experience .rp-slow.is-on { border-color: var(--lamp-line-strong); color: var(--lamp-hi); background: rgba(232, 189, 126, 0.08); }
+.wv-experience .rp-controls :disabled { opacity: 0.4; cursor: default; }
+.wv-experience .rp-note { flex: none; margin: var(--s-3) 0 0; text-align: center; font-size: var(--fs-caption); line-height: 1.45; color: var(--c-fg-muted); text-wrap: balance; }
+
+@media (max-height: 600px) {
+  .wv-experience .rp-stage { margin-top: 6px; }
+  .wv-experience .rp-controls { margin-top: 8px; }
+  .wv-experience .rp-controls .btn-primary, .wv-experience .rp-controls .btn-ghost { height: 48px; }
+  .wv-experience .rp-note { margin-top: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wv-experience .rp-rep { transition: none; }
+}
+
+/* Step 4: the video with its overlay, prepared then shared (29 September). */
+.wv-experience .rp-export { flex: none; margin-top: 10px; display: flex; flex-direction: column; }
+.wv-experience .rp-export-actions { display: flex; flex-direction: column; gap: var(--s-2); width: 100%; }
+/* The video without text: a quiet choice under the one action to share (card 004), not a second button. */
+.wv-experience .rp-clean-btn { align-self: center; color: var(--c-fg-muted); }
+.wv-experience .rp-export .btn-line { width: 100%; justify-content: center; text-decoration: none; }
+.wv-experience .rp-export .btn-line:disabled { opacity: 0.7; cursor: default; }
+.wv-experience .rp-export-note { margin: var(--s-2) 0 0; font-size: var(--fs-caption); line-height: 1.4; color: var(--c-fg-muted); text-align: center; }
+
+.wv-experience .rp-fault-banner {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  background: var(--well);
+  border: 1px solid var(--hair-2);
+  color: var(--lamp-hi);
+  font-family: var(--mono);
+  font-size: var(--fs-caption);
+  letter-spacing: var(--track-label);
+  z-index: 3;
+}
+.wv-experience .rp-fault-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c-accent);
+  flex-shrink: 0;
+}
+
+.wv-experience .rp-fault-banner.rp-spine-fault {
+  top: 48px;
+}
+
+.wv-experience .rp-fault-banner.rp-tilt-fault {
+  top: 86px;
+}
+
+.wv-experience .rp-fault-banner.rp-scapular-fault {
+  top: 124px;
+}
+

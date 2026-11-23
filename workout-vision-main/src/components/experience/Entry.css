@@ -1,0 +1,407 @@
+/* Ported from design/experience-prototype.html, scoped to the entry. */
+.wv-experience {
+  color-scheme: dark;
+  /* The experience is dark whatever the system's theme. _tokens.css turns these four light under
+     prefers-color-scheme: light, and rules of the experience use them as grounds: pinned here to their dark values,
+     once (card 007, 12 November 2026; e2e/light-mode.spec.js holds it). */
+  --depth-1: #0f0f13;
+  --depth-2: #161619;
+  --surface-glass: rgba(255, 255, 255, 0.025);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --void: #080706;
+  --basalt: #110F0C;
+  --hair: rgba(239, 232, 220, 0.10);
+  --hair-2: rgba(239, 232, 220, 0.18);
+  --bone: #EFE8DC;
+  --bone-2: #D9D1C4;
+  --ash: #A49B8D;
+  --ash-2: #8C8477;
+  --lamp: #E8BD7E;
+  --lamp-hi: #F7DCAE;
+  --ember: #B07A3C;
+  --ink: #150F08;
+  --paper: #FBF7EF;
+  --paper-ink: #1D1812;
+  --paper-ash: #6B6256;
+  --paper-rule: #E4DCCD;
+  --serif: "Instrument Serif", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --gut: 20px;
+  /* The design system (design/SYSTEM.md): every screen takes its sizes, spaces, radii, colours and
+     timings from these tokens, never from a value of its own. */
+  /* Colour roles beyond the prototype's: the well under figures and drawings, the list separator,
+     the one gold outline, the gold of measured counts, and the paper's own gold and second rule. */
+  --well: #0B0908;
+  --card-top: #14110D;
+  --frame-bezel: #0C0A08;
+  --live-dot: #E0624A;
+  --video-well: #000000;
+  --hair-0: rgba(239, 232, 220, 0.07);
+  --lamp-line: rgba(232, 189, 126, 0.55);
+  --lamp-line-strong: rgba(232, 189, 126, 0.7);
+  --gold-num: linear-gradient(180deg, #FFF3DC 0%, #F0CB8E 46%, #B9823F 100%);
+  --btn-primary-bg: linear-gradient(180deg, #F6DAAA 0%, #E3B170 55%, #C98F48 100%);
+  --paper-gold: #8A6630;
+  --paper-rule-2: #F0EADF;
+  /* Type: eight roles and their responsive companions. 16 px stays for inputs (iOS zoom) and the primary button's label. */
+  --fs-display: clamp(120px, min(56vw, 30svh), 260px);
+  --fs-display-expert-sm: clamp(110px, min(56vw, 22svh), 260px);
+  --fs-hero-num: min(172px, 44vw);
+  --fs-hero-num-sm: min(132px, 36vw);
+  --fs-hero-num-xs: min(108px, 30vw);
+  --fs-hero-num-long: min(124px, 31vw);
+  --fs-typed-num: min(112px, 29vw);
+  --fs-blind-typed: 72px;
+  --fs-number: clamp(64px, 19vw, 76px);
+  --fs-number-beg: clamp(56px, 17vw, 76px);
+  --fs-number-beg-xs: 52px;
+  --fs-blind-pct: 44px;
+  --fs-hist-n: min(var(--fs-title), 44px);
+  --fs-title: clamp(38px, 10.6vw, 50px);
+  --fs-entry-l1: clamp(38px, 11.8vw, 46px);
+  --fs-entry-l1-sm: clamp(34px, 10.6vw, 42px);
+  --fs-res-q: 42px;
+  --fs-altar-fallback: 37px;
+  --fs-altar: min(34px, 8.4vw);
+  --fs-altar-xs: min(32px, 8.4vw);
+  --fs-res-q-sm: 34px;
+  --fs-title-xs: 32px;
+  --fs-res-q-fix: 32px;
+  --fs-res-q-xs: 30px;
+  --fs-moment: 28px;
+  --fs-heading: clamp(27px, 7.8vw, 31px);
+  --fs-low-title: 27px;
+  --fs-rp-n: 26px;
+  --fs-brand: 24px;
+  --fs-name: 23px;
+  --fs-name-fit: min(var(--fs-name), 6.2vw);
+  --fs-subhead-lg: 22px;
+  --fs-metric: 21px;
+  --fs-lead: 20px;
+  --fs-item-title: 19px;
+  --fs-subhead: 18px;
+  --fs-key: 17px;
+  --fs-input: 16px;
+  --fs-body: 15px;
+  --fs-caption: 13px;
+  --fs-status: 12px;
+  --fs-table: 11.5px;
+  --fs-label: 10.5px;
+  --fs-legend: 9.5px;
+  --fs-th: 9px;
+  --fs-thumb-tag: 7.5px;
+  --track-label: 0.2em;
+  /* Spacing: 4 inside a line, 8 label to value, 12 title to sub, 16 topbar to content,
+     24 block to block, 32 section to section, 48 end of page. */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px; --s-7: 48px;
+  /* Radii. */
+  --r-pill: 999px; --r-xl: 30px; --r-l: 24px; --r-m: 18px; --r-s: 14px; --r-paper: 6px;
+  /* Motion: one curve in, one out, six durations. */
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --d-fast: 0.2s; --d-ui: 0.45s; --d-tick: 0.34s; --d-appear: 0.9s; --d-screen: 0.8s; --d-reveal: 1.1s;
+}
+.wv-experience *, .wv-experience *::before, .wv-experience *::after { box-sizing: border-box; }
+.wv-experience { height: 100%; }
+.wv-experience {
+  margin: 0; background: var(--c-surface); color: var(--c-fg);
+  font: 400 var(--fs-body)/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  overflow: hidden; overscroll-behavior: none; -webkit-tap-highlight-color: transparent;
+}
+.wv-experience :where(button, label[role="button"]) {
+  font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0;
+  cursor: pointer; -webkit-user-select: none; user-select: none; touch-action: manipulation; text-align: inherit;
+}
+.wv-experience input, .wv-experience textarea { font: inherit; color: inherit; }
+.wv-experience :focus-visible { outline: 2px solid var(--c-accent); outline-offset: 3px; }
+.wv-experience [hidden] { display: none !important; }
+.wv-experience .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.wv-experience .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.wv-experience .entry-stage { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; display: block; }
+.wv-experience .vignette { position: fixed; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(130% 90% at 50% 36%, transparent 50%, rgba(0, 0, 0, 0.62) 100%); }
+.wv-experience .grain {
+  position: fixed; inset: -60px; z-index: 8; pointer-events: none; opacity: 0.07;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .6 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+/* The grain stands still (C9, design review of 7 October 2026): the same texture at the same 0.07, without the
+   animation that repainted a full-screen layer five times a second. Status: convention (no specific source). */
+.wv-experience .screen {
+  position: fixed; inset: 0; z-index: 2; overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) var(--gut) calc(env(safe-area-inset-bottom, 0px) + 30px);
+  opacity: 0; visibility: hidden; transition: opacity 0.5s var(--ease), visibility 0s linear 0.5s;
+}
+.wv-experience .screen.is-active { opacity: 1; visibility: visible; transition: opacity 0.8s var(--ease) 0.05s, visibility 0s; }
+.wv-experience .wrap { width: 100%; max-width: 440px; margin-inline: auto; display: flex; flex-direction: column; }
+.wv-experience [data-reveal] { opacity: 0; }
+.wv-experience .screen.is-active [data-reveal] { animation: reveal var(--d-reveal) var(--ease) both; }
+@keyframes reveal { from { opacity: 0; translate: 0 18px; } to { opacity: 1; translate: 0 0; } }
+.wv-experience .appear { animation: reveal var(--d-appear) var(--ease) both; }
+.wv-experience .topbar { display: flex; align-items: center; justify-content: space-between; min-height: 48px; }
+.wv-experience .pill { font-family: var(--mono); font-size: var(--fs-label); letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-fg-muted); border: 1px solid var(--hair-2); border-radius: var(--r-pill); padding: 4px 10px; display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+/* Lift tier (liftTiers.js): Beta in the lamp's colour, Experimental in ash; always legible, never a badge of quality. */
+.wv-experience .tier { align-self: flex-start; display: inline-flex; align-items: center; justify-content: center; margin: 6px 0 0; font-family: var(--mono); font-size: var(--fs-label); line-height: 1; letter-spacing: 0.08em; border: 1px solid currentColor; border-radius: var(--r-pill); padding: 4px 10px; max-width: 100%; }
+.wv-experience .tier-beta { color: var(--c-accent); text-transform: uppercase; }
+/* Experimental is a sentence, not a badge: plain caption text, no box (design/SYSTEM.md, #7). */
+.wv-experience .tier-experimental { border: 0; padding: 0; font: 400 var(--fs-caption)/1.45 var(--sans); letter-spacing: 0; color: var(--c-fg-muted); }
+.wv-experience .icon-btn { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--hair-2); display: grid; place-items: center; }
+.wv-experience .icon-btn svg { width: 18px; height: 18px; }
+/* Headings take the experience's weight and leading, not the old app's bold display headings (styles/_base.css): an
+   eyebrow set as a heading for screen readers (History, Result, Watch) read faux-bold in a mono face that has no bold
+   (getComputedStyle, 6 October: font-weight 800 on "Vos données"). :where() adds no weight, so every class still sets its own. */
+.wv-experience :where(h1, h2, h3, h4, h5, h6) { font-weight: 400; line-height: inherit; }
+.wv-experience .eyebrow { margin: 0; font-family: var(--mono); font-size: var(--fs-label); letter-spacing: var(--track-label); text-transform: uppercase; color: var(--c-accent); }
+.wv-experience .title { margin: 0; font-family: var(--serif); font-weight: 400; font-size: var(--fs-title); line-height: 0.98; letter-spacing: -0.012em; text-wrap: balance; }
+.wv-experience .sub { margin: 0; color: var(--c-fg-muted); font-size: var(--fs-body); line-height: 1.55; max-width: 36ch; }
+.wv-experience .press, .wv-experience .tactile { position: relative; transition: scale 0.22s var(--ease), background-color 0.2s, border-color 0.2s; }
+/* Only .is-pressed dips a control (main.jsx sets it after 80 ms under a finger, at once under a
+   mouse). Never :active: iOS Safari applies it the moment a finger lands, also on a swipe or a
+   scroll that starts on the control. */
+.wv-experience .is-pressed { scale: 0.975; }
+.wv-experience .press::after, .wv-experience .tactile::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: radial-gradient(170px circle at var(--px, 50%) var(--py, 50%), rgba(247, 220, 174, 0.2), transparent 65%);
+  opacity: 0; transition: opacity 0.5s var(--ease);
+}
+.wv-experience .is-pressed::after { opacity: 1; transition-duration: 0.06s; }
+.wv-experience .hx { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; z-index: 3; cursor: pointer; }
+/* The invisible file input is the control: its keyboard focus shows on the label it covers. */
+.wv-experience label:has(> .hx:focus-visible) { outline: 2px solid var(--c-accent); outline-offset: 3px; }
+/* The entry (C2 of the design review, 7 October 2026; mock-up studio/final/01-entry): a status line (the serif
+   wordmark over a 2 px rule, the test status in words), the viewfinder holding the figure of light, the promise, the
+   privacy line, two keys and the credit. Flush left, one column. Everything is in place and tappable within about
+   1.2 s; nothing loops. Sizes from the mock-up: status 12 px caps, promise 46 px serif, line 20 px, keys 58 px. */
+.wv-experience .entry {
+  display: flex; flex-direction: column; text-align: left;
+  padding: env(safe-area-inset-top, 0px) var(--gut) calc(env(safe-area-inset-bottom, 0px) + 18px);
+}
+/* The first screen's own height, whatever follows it (EntryMore.jsx, 12 November 2026). */
+.wv-experience .entry-fold { flex: none; display: flex; flex-direction: column; min-height: calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 18px); }
+.wv-experience .entry-skip { position: absolute; inset: 0; width: 100%; height: 100%; cursor: default; z-index: 0; }
+.wv-experience .entry-mast {
+  position: relative; z-index: 1; pointer-events: none; flex: none; height: 44px; margin-top: 6px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 2px solid var(--c-fg);
+  opacity: 0; white-space: nowrap;
+}
+.wv-experience .entry .brand { margin: 0; font-family: var(--serif); font-style: italic; font-weight: 400; font-size: var(--fs-brand); line-height: 1; color: var(--c-fg); }
+.wv-experience .entry-test { margin: 0; font-size: var(--fs-status); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--bone-2); }
+/* The viewfinder: it takes the height the words leave; its four corners frame the figure drawn on the stage behind. */
+.wv-experience .entry-view { position: relative; flex: 1 1 auto; min-height: 120px; margin-top: 20px; pointer-events: none; opacity: 0; }
+.wv-experience .entry-view i { position: absolute; width: 18px; height: 18px; border: 0 solid var(--ash); }
+.wv-experience .entry-view i:nth-child(1) { top: 0; left: 0; border-top-width: 1.5px; border-left-width: 1.5px; }
+.wv-experience .entry-view i:nth-child(2) { top: 0; right: 0; border-top-width: 1.5px; border-right-width: 1.5px; }
+.wv-experience .entry-view i:nth-child(3) { bottom: 0; left: 0; border-bottom-width: 1.5px; border-left-width: 1.5px; }
+.wv-experience .entry-view i:nth-child(4) { bottom: 0; right: 0; border-bottom-width: 1.5px; border-right-width: 1.5px; }
+.wv-experience .entry-copy { position: relative; z-index: 1; flex: none; display: flex; flex-direction: column; align-items: stretch; pointer-events: none; width: 100%; max-width: 440px; margin: 0 auto; }
+.wv-experience .entry-l1 { margin: 26px 0 0; font-family: var(--serif); font-style: italic; font-weight: 400; font-size: var(--fs-entry-l1); line-height: 1; letter-spacing: -0.015em; color: var(--c-fg); text-wrap: balance; }
+.wv-experience .entry-l2 { margin: 10px 0 0; max-width: 330px; font-size: var(--fs-lead); line-height: 1.35; color: var(--bone-2); opacity: 0; }
+.wv-experience .entry-l3 { margin: 18px 0 0; display: flex; align-items: center; gap: 10px; font-size: var(--fs-body); line-height: 1.4; color: var(--bone-2); opacity: 0; }
+.wv-experience .entry-l3 svg { flex: none; }
+.wv-experience .mask { display: block; overflow: hidden; padding-bottom: 0.08em; }
+.wv-experience .mask > span { display: block; translate: 0 112%; }
+.wv-experience .entry-keys { display: flex; flex-direction: column; gap: 10px; margin-top: 28px; opacity: 0; }
+/* The keys: bone fill for the one way in, a 3:1 outline for the example (WCAG 1.4.11). Radius 4, 58 px, verbs. */
+.wv-experience :is(.enter, .entry-demo, .entry-interactive) {
+  pointer-events: auto; position: relative; z-index: 2; width: 100%; height: 58px; min-height: 44px; border-radius: 4px;
+  display: inline-flex; align-items: center; justify-content: center; text-align: center;
+  font-size: var(--fs-key); font-weight: 600; letter-spacing: 0; overflow: hidden;
+}
+.wv-experience .enter { background: var(--c-fg); color: var(--void); }
+.wv-experience .entry-interactive {
+  gap: 10px; font-size: var(--fs-body); border: 1.5px solid var(--lamp-line);
+  color: var(--lamp-hi); background: color-mix(in srgb, var(--void) 70%, transparent);
+}
+.wv-experience .entry-interactive-pill {
+  font-family: var(--mono); font-size: var(--fs-label); letter-spacing: 0.1em;
+  padding: 3px 6px; border-radius: var(--r-pill); background: var(--c-accent); color: var(--void); font-weight: 700;
+}
+.wv-experience .entry-demo { border: 1.5px solid color-mix(in srgb, var(--c-fg) 40%, transparent); color: var(--c-fg); }
+.wv-experience .enter > span { position: relative; z-index: 1; }
+.wv-experience .entry .enter::after { background: radial-gradient(170px circle at var(--px, 50%) var(--py, 50%), color-mix(in srgb, var(--void) 14%, transparent), transparent 65%); }
+/* One pass of light across the key once it is in place, never again (C2). */
+.wv-experience .enter::before { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 35%, color-mix(in srgb, var(--paper) 60%, transparent) 50%, transparent 65%); translate: -130% 0; }
+.wv-experience .entry-credit {
+  pointer-events: auto; position: relative; z-index: 2; align-self: center; display: inline-flex; align-items: center; min-height: 44px; margin-top: 6px; padding: 0 8px;
+  font-size: var(--fs-body); color: var(--bone-2); text-decoration: none; opacity: 0;
+}
+/* The order of appearance, all of it done 0.85 s after the words' faces are in (at most 450 ms, Entry.jsx). */
+.wv-experience .entry.play .entry-mast { animation: fade 0.5s var(--ease) 0s forwards; }
+.wv-experience .entry.play .entry-view { animation: fade 0.6s var(--ease) 0.05s forwards; }
+.wv-experience .entry.play .entry-l1 .mask > span { animation: rise 0.7s var(--ease) 0.1s forwards; }
+.wv-experience .entry.play .entry-l2 { animation: fade 0.5s var(--ease) 0.2s forwards; }
+.wv-experience .entry.play .entry-l3 { animation: fade 0.5s var(--ease) 0.3s forwards; }
+.wv-experience .entry.play .entry-keys { animation: fade 0.45s var(--ease) 0.35s forwards; }
+.wv-experience .entry.play .entry-credit { animation: fade 0.45s var(--ease) 0.4s forwards; }
+.wv-experience .entry.play .enter::before { animation: sweep 1.4s var(--ease) 0.9s 1 forwards; }
+/* Once the example has faded in over it, the entry is hidden until the example closes. */
+.wv-experience .entry.demo-open { visibility: hidden; transition: visibility 0s linear 0.85s; }
+.wv-experience .entry.skip :is(.entry-mast, .entry-view, .entry-l2, .entry-l3, .entry-keys, .entry-credit) { animation-delay: 0s !important; animation-duration: 0.25s !important; }
+.wv-experience .entry.skip .mask > span { animation-delay: 0s !important; animation-duration: 0.3s !important; }
+.wv-experience .entry.leaving :is(.entry-copy, .entry-mast, .entry-view) { animation: out 0.45s var(--ease) forwards !important; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rise { from { translate: 0 112%; } to { translate: 0 0; } }
+@keyframes sweep { 0% { translate: -130% 0; } 40%, 100% { translate: 130% 0; } }
+@keyframes out { from { opacity: 1; translate: 0 0; } to { opacity: 0; translate: 0 -14px; } }
+
+.wv-experience { position: fixed; inset: 0; z-index: 100; isolation: isolate; }
+.wv-experience .entry-stage { position: absolute; }
+.wv-experience .tactile.is-pressed { transition-duration: 0.06s; }
+@media (prefers-reduced-motion: reduce) {
+ .wv-experience *, .wv-experience *::before, .wv-experience *::after { animation: none !important; transition: none !important; }
+ .wv-experience :is(.entry-mast, .entry-view, .entry-l2, .entry-l3, .entry-keys, .entry-credit) { opacity: 1; }
+ .wv-experience .mask > span { translate: 0 0; }
+}
+
+
+/* Buttons shared by every screen (from the prototype, formerly in Film.css):
+   defined here, with the entry, so a screen reached first never lacks them. */
+/* The four levels (design/SYSTEM.md): primary, one per screen; secondary outline in gold, for the one
+   next action; quiet in hairline; text. Paired buttons share one height. */
+.wv-experience .actions { display: flex; flex-direction: column; gap: 12px; margin-top: var(--s-5); }
+.wv-experience .btn-primary {
+  position: relative; height: 58px; width: 100%; border-radius: var(--r-m); overflow: hidden;
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  color: var(--c-on-accent); font-weight: 600; font-size: var(--fs-input); letter-spacing: 0.01em;
+  background: var(--btn-primary-bg);
+  /* A tighter glow than the prototype's: its 40 px spread laid a gold haze on the button below (#9). */
+  box-shadow: 0 12px 28px -16px rgba(232, 189, 126, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+  min-height: 44px; cursor: pointer;
+}
+.wv-experience .btn-primary::after { background: radial-gradient(170px circle at var(--px, 50%) var(--py, 50%), rgba(255, 255, 255, 0.45), transparent 65%); }
+.wv-experience .btn-primary svg { width: 18px; height: 18px; }
+.wv-experience .btn-line { height: 54px; width: 100%; border-radius: var(--r-m); border: 1px solid var(--lamp-line); color: var(--lamp-hi); display: inline-flex; align-items: center; justify-content: center; gap: 10px; font-size: var(--fs-body); min-height: 44px; text-decoration: none; }
+.wv-experience .btn-ghost { height: 54px; width: 100%; border-radius: var(--r-m); border: 1px solid var(--hair-2); font-size: var(--fs-body); color: var(--c-fg); display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 44px; cursor: pointer; background: transparent; text-decoration: none; }
+.wv-experience :is(.btn-line, .btn-ghost) svg { width: 17px; height: 17px; flex-shrink: 0; }
+/* The compact quiet button: filters and small actions in a row. */
+.wv-experience .btn-ghost.is-s { height: 44px; width: auto; padding: 0 16px; border-radius: var(--r-s); font-size: var(--fs-caption); }
+.wv-experience .text-btn { height: 44px; padding: 0 16px; font-size: var(--fs-body); color: var(--c-fg-muted); align-self: center; text-decoration: none; }
+/* In a left-aligned column the text button's label lines up with the text above it. */
+.wv-experience .text-btn.is-inline { padding-inline: 0; align-self: flex-start; display: inline-flex; align-items: center; }
+/* One section head: a mono label over a hairline (lists, days, progress, the demo's times). */
+.wv-experience :is(.section-head, .list-head, .hist-head) { margin: var(--s-6) 0 0; padding-bottom: 10px; border-bottom: 1px solid var(--c-rule); font-family: var(--mono); font-weight: 400; font-size: var(--fs-label); line-height: 1.4; letter-spacing: var(--track-label); text-transform: uppercase; color: var(--c-fg-muted); }
+.wv-experience .section-head.is-accent { color: var(--c-accent); }
+/* Surfaces: glass for the user's turn, a hairline card for information. */
+.wv-experience .surface-glass { border-radius: var(--r-l); border: 1px solid var(--c-rule); background: rgba(20, 17, 13, 0.56); -webkit-backdrop-filter: blur(22px) saturate(1.15); backdrop-filter: blur(22px) saturate(1.15); }
+.no-glass .wv-experience .surface-glass { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(20, 17, 13, 0.9); }
+.wv-experience .surface-card { border-radius: var(--r-l); border: 1px solid var(--c-rule); padding: 18px 20px; }
+/* Numbers that move like instruments: each digit in a cell of its own; only the digit that changes rolls in.
+   Geist tabular digits are ~0.64em wide; 0.52em clipped "0".."9" against their cell boxes and overlapped ":" and neighbours. */
+.wv-experience .dg { display: inline-block; width: max(0.68em, 1ch); text-align: center; animation: dg-in var(--d-tick) var(--ease); }
+.wv-experience .dg.is-sep { width: auto; animation: none; }
+@keyframes dg-in { from { translate: 0 0.35em; opacity: 0; } }
+/* A count's word under its numeral, and the numeral's tick: shared by the result and the entry's example. */
+.wv-experience .res-label { margin: var(--s-2) 0 0; text-align: center; font-family: var(--mono); font-size: var(--fs-label); letter-spacing: 0.34em; text-indent: 0.34em; text-transform: uppercase; color: var(--c-fg-muted); }
+@keyframes res-tick { from { scale: 1.07; opacity: 0.55; } to { scale: 1; opacity: 1; } }
+
+/* ── Shared craft rules (26 September) ─────────────────────────────── */
+/* The page itself is the void, so nothing pale ever shows between screens. */
+html, body { background: var(--void); color-scheme: dark; }
+/* Screens float over one stage (dust, vignette, grain); the entry and the
+   report keep their own opaque ground. */
+.wv-experience { background: transparent; }
+.wv-experience.entry-experience, .wv-experience:has(.report-screen) { background: var(--c-surface); }
+.wv-stage { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; display: block; pointer-events: none; }
+.wv-vignette { position: fixed; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(130% 90% at 50% 36%, transparent 50%, rgba(0, 0, 0, 0.62) 100%); }
+.wv-grain {
+  position: fixed; inset: -60px; z-index: 200; pointer-events: none; opacity: 0.07;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .6 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+/* Every screen after the entry fades in; its blocks rise one after another. */
+.wv-experience .screen.is-active:not(.entry) { animation: screen-in var(--d-screen) var(--ease) 0.05s backwards; }
+@keyframes screen-in { from { opacity: 0; } }
+.wv-experience .screen.is-active [data-reveal] { animation-delay: calc(0.08s + var(--i, 0) * 0.07s); }
+/* Both layers stay above the stage and its vignette while they cross. */
+.wv-current, .wv-leaving { position: relative; z-index: 2; }
+/* The leaving screen starts its fade gently, so it is still about 86 % there 150 ms after the tap while the new
+   screen appears over it: with the prototype's fast-start curve both were near 15 % at that moment and the stage
+   flashed nearly blank (tour, t04-back-to-choice, twice on 29 September). Same 0.5 s. */
+.wv-leaving { opacity: 0; transition: opacity 0.5s var(--ease-exit, cubic-bezier(0.4, 0, 1, 1)); pointer-events: none; }
+/* A screen returned to is already there, its entrance not played again; the screen being left fades away on top
+   of it, so nothing between them is dark (ScreenFade.jsx; e2e/screen-return.spec.js). */
+.wv-return .screen.is-active, .wv-return [data-reveal] { animation: none !important; opacity: 1; }
+.wv-leaving:has(+ .wv-return) { z-index: 3; }
+/* After a browser back swipe the screen is simply there: Safari already animated it. */
+.wv-instant .screen.is-active, .wv-instant [data-reveal] { animation: none !important; opacity: 1; }
+/* A screen shown without its entrance leaves without it too (ScreenFade.jsx): losing .wv-return or .wv-instant replayed
+   it from transparent under the fade, and the stage showed bare (tour, t09-to-guide, 14 October 2026). */
+.wv-still .screen.is-active, .wv-still [data-reveal] { animation: none !important; opacity: 1; }
+/* A report on its way out still takes the taps, so a double tap on Back cannot fall through. */
+.wv-experience.is-leaving { opacity: 0; transition: opacity var(--d-ui) var(--ease); }
+/* The report opens over the result: its whole layer fades in, ground included,
+   so the result never drops to black in between. */
+.wv-experience:has(.report-screen) { animation: screen-in 0.6s var(--ease) backwards; }
+.wv-experience .report-screen.is-active { animation: none; }
+/* The brand sits on the pill's centre line. */
+.wv-experience .brand-sm { display: inline-flex; align-items: center; }
+/* Touch: no text selection or callouts on UI, no double-tap zoom. */
+.wv-experience { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
+.wv-experience :is(input, textarea, .sheet) { -webkit-user-select: text; user-select: text; }
+/* Old global styles that leaked into the new screens. */
+.wv-experience .btn-primary:active { transform: none; opacity: 1; }
+.wv-experience :is(button, a) { transition: scale 0.22s var(--ease), background-color 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s; }
+.wv-experience :is(input, textarea), .wv-experience :is(input, textarea):is(:focus, :focus-visible) { box-shadow: none; }
+.wv-experience ::selection { background: rgba(232, 189, 126, 0.3); color: var(--c-fg); }
+.wv-experience ::-webkit-scrollbar { width: 0; height: 0; }
+/* The entry on short screens (Safari with its toolbars, an iPhone SE at 375 × 667 and less): the same order, tighter,
+   the viewfinder giving up height first (it keeps at least 120 px). */
+@media (max-height: 760px) {
+  .wv-experience .entry-view { margin-top: 14px; }
+  .wv-experience .entry-l1 { margin-top: 18px; font-size: var(--fs-entry-l1-sm); }
+  .wv-experience .entry-l2 { margin-top: 8px; font-size: var(--fs-subhead); }
+  .wv-experience .entry-l3 { margin-top: 12px; }
+  .wv-experience .entry-keys { margin-top: 18px; gap: 8px; }
+  .wv-experience :is(.enter, .entry-demo, .entry-interactive) { height: 52px; }
+  .wv-experience .entry-credit { margin-top: 2px; }
+}
+@media (max-height: 600px) {
+  .wv-experience .entry-l1 { margin-top: 12px; font-size: var(--fs-title-xs); }
+  .wv-experience .entry-l2 { font-size: var(--fs-input); }
+  .wv-experience .entry-l3 { margin-top: 8px; }
+  .wv-experience .entry-keys { margin-top: 12px; }
+  .wv-experience :is(.enter, .entry-demo, .entry-interactive) { height: 48px; }
+  .wv-experience .entry-view { min-height: 90px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .wv-experience .entry:not(.play) :is(.enter, .entry-demo, .entry-interactive, .entry-credit) { pointer-events: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wv-experience [data-reveal] { opacity: 1; translate: none; }
+  .wv-experience:has(.report-screen) { animation: none; }
+}
+
+/* The large title condenses into the topbar as it scrolls under it (topbar.js): the bar sticks, turns to
+   frosted glass with a hairline, and shows the same title, small and centred. At rest nothing moves:
+   the bar reaches up through the screen's top padding, so the page is laid out as before. */
+.wv-experience .topbar.is-sticky {
+  position: sticky; top: 0; z-index: 6;
+  margin: calc(-10px - env(safe-area-inset-top, 0px)) calc(var(--gut) * -1) 0;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) var(--gut) 0;
+  transition: background-color 0.3s var(--ease), box-shadow 0.3s var(--ease);
+}
+.wv-experience .topbar.is-condensed { background: rgba(8, 7, 6, 0.86); -webkit-backdrop-filter: blur(20px) saturate(1.2); backdrop-filter: blur(20px) saturate(1.2); box-shadow: 0 1px 0 var(--c-rule); }
+.no-glass .wv-experience .topbar.is-condensed { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(8, 7, 6, 0.94); }
+.wv-experience .topbar-title {
+  position: absolute; left: calc(var(--gut) + 56px); right: calc(var(--gut) + 56px); bottom: 14px;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: center;
+  font: 500 var(--fs-body)/1.2 var(--sans); color: var(--c-fg); pointer-events: none;
+  opacity: 0; translate: 0 6px; transition: opacity 0.15s var(--ease), translate 0.3s var(--ease);
+}
+.wv-experience .topbar.is-condensed .topbar-title { opacity: 1; translate: 0 0; transition-delay: 0.15s; }
+/* The topbar keeps its buttons above the title it shows. */
+.wv-experience .topbar.is-sticky > :not(.topbar-title) { position: relative; z-index: 1; }
+/* Condensed, the bar gives the test-version pill's room to the title; the pill is back at the top. They take turns,
+   never cross-fade: the centred title runs under the pill below about 430 px (report.tests.js, 14 October 2026). */
+.wv-experience .topbar.is-sticky .pill { transition: opacity 0.15s var(--ease) 0.15s; }
+.wv-experience .topbar.is-condensed .pill { opacity: 0; transition-delay: 0s; }
+/* A sticky topbar needs a screen that is not itself a scroll box: these screens let the page scroll,
+   so they clip sideways instead of scrolling (the page's own overflow-x keeps the width). */
+.wv-experience :is(.guide-screen, .history-screen, .report-screen) { overflow-x: clip; overflow-y: visible; }
+/* A row reached by the keyboard or VoiceOver is scrolled clear of the sticky bar, not under it
+   (review, 30 September). The bar is 44 px of buttons plus its padding and the safe area. */
+.wv-experience:has(.topbar.is-sticky) { scroll-padding-top: calc(76px + env(safe-area-inset-top, 0px)); }
+/* At 320 px the spaced name came within 4 px of the "Version de test" pill (2 October 2026): it tightens, the
+   pill keeps its size. */
+@media (max-width: 359px) { .wv-experience .topbar .brand-sm { letter-spacing: 0.3em; } }

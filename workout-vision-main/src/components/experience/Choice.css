@@ -1,0 +1,124 @@
+/* Choice styles ported from the approved prototype. */
+.wv-experience .welcome { margin-top: 18px; }.wv-experience .welcome-l1 { margin: 0; font-family: var(--serif); font-style: italic; font-size: var(--fs-heading); line-height: 1.1; color: var(--c-accent); }.wv-experience .welcome-l2 { margin: 4px 0 0; font-size: var(--fs-caption); color: var(--c-fg-muted); }.wv-experience .choose-screen .title { margin-top: 22px; }.wv-experience .choose-screen .sub { margin-top: var(--s-3); }.wv-experience .rail {
+  display: flex; gap: 12px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; touch-action: pan-x pan-y;
+  margin: 24px calc(var(--gut) * -1) 0; padding: 4px var(--gut) 8px; scrollbar-width: none;
+}.wv-experience .rail::-webkit-scrollbar { display: none; }.wv-experience .altar {
+  position: relative; display: block; flex: 0 0 min(80%, 340px); height: clamp(390px, 58vh, 500px); scroll-snap-align: center;
+  border-radius: var(--r-xl); overflow: hidden; isolation: isolate; text-align: left;
+  background: radial-gradient(90% 55% at 50% 0%, rgba(232, 189, 126, 0.17), transparent 70%), linear-gradient(180deg, var(--card-top) 0%, var(--well) 100%);
+  border: 1px solid var(--c-rule);
+}.wv-experience .altar canvas { position: absolute; left: 0; top: 0; width: 100%; height: 72%; display: block; }.wv-experience .altar-meta { position: absolute; left: 22px; right: 22px; bottom: 22px; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }.wv-experience .altar-idx { font-family: var(--mono); font-size: var(--fs-label); letter-spacing: 0.2em; color: var(--c-fg-muted); }.wv-experience .altar-name { font-family: var(--serif); font-size: var(--fs-altar-fallback); line-height: 1; letter-spacing: -0.01em; }.wv-experience .altar-alias { font-size: var(--fs-caption); color: var(--c-fg-muted); }.wv-experience .altar-view { margin-top: 8px; display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: var(--fs-label); letter-spacing: var(--track-label); text-transform: uppercase; color: var(--c-accent); }.wv-experience .altar-view svg { width: 14px; height: 14px; flex-shrink: 0; }.wv-experience .dots { display: flex; justify-content: center; gap: 6px; margin-top: 14px; }.wv-experience .dots i { width: 16px; height: 2px; border-radius: 1px; background: var(--hair-2); transition: width var(--d-ui) var(--ease), background var(--d-ui); }.wv-experience .dots i.on { width: 30px; background: var(--c-accent); }.wv-experience .row-link { width: 100%; display: flex; align-items: center; gap: 16px; margin-top: var(--s-3); padding: 14px 2px; border-top: 1px solid var(--c-rule); border-bottom: 1px solid var(--c-rule); text-align: left; }.wv-experience .row-ico { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--hair-2); display: grid; place-items: center; color: var(--c-accent); flex-shrink: 0; }.wv-experience .row-ico svg { width: 22px; height: 22px; }.wv-experience .row-txt { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }.wv-experience .row-txt b { font-weight: 500; font-size: var(--fs-input); }.wv-experience .row-txt small { font-size: var(--fs-caption); color: var(--c-fg-muted); }.wv-experience .row-arrow { width: 18px; height: 18px; color: var(--c-fg-muted); flex-shrink: 0; }.wv-experience .foot { margin: var(--s-5) 0 0; text-align: center; font-size: var(--fs-caption); line-height: 1.45; color: var(--c-fg-muted); text-wrap: balance; }
+
+
+.wv-experience .title, .wv-experience .altar-name { color: var(--c-fg); }
+
+/* The choice fills the screen it is given. The heading, the rail and the dots form one block as
+   tall as the visible screen, less a reserve at the bottom for the floating bar of the browser
+   (Safari and the in-app browsers of iOS 26 lay it over the page); the card takes whatever
+   height the heading leaves, whatever the phone, the language or the greeting. The figure takes
+   the card's height above the name. */
+.wv-experience .choose-screen { --reserve: 80px; }
+.wv-experience .choose-hero { display: flex; flex-direction: column; min-height: min(900px, calc(100svh - env(safe-area-inset-top, 0px) - 10px - var(--reserve))); }
+.wv-experience .rail { flex: 1 0 auto; min-height: 262px; max-height: 580px; padding-top: 6px; margin-top: 22px; }
+.wv-experience .altar { display: flex; flex-direction: column; height: auto; }
+.wv-experience .altar canvas { position: static; flex: 1 1 0; min-height: 0; width: 100%; height: auto; }
+/* The card is the figure and three lines: the name, the tier, the other names. Its place in
+   the rail is the dots' to show, and how it is filmed the filming screen's. */
+.wv-experience .altar-meta { position: static; flex: none; padding: 6px 20px 20px; }
+/* Sized to the card. A name longer than the card ("Soulevé de terre roumain") takes two balanced lines at the
+   same size, never runs under the card's edge (David, 2 October 2026; e2e/card-names-fit.spec.js). The card's
+   other lines and the rows under it are balanced too, so no line ends on one word. */
+.wv-experience .altar-name { font-size: var(--fs-altar); line-height: 1.02; text-wrap: balance; }
+.wv-experience .altar-meta .tier, .wv-experience .altar-alias, .wv-experience .row-txt small { text-wrap: balance; }
+/* The recent lifts: one row of pills under the welcome, each a 44 px tap target (A11Y-2), scrolled sideways when
+   the names are long; never two lines, so the cards keep their place (WP1.5). */
+.wv-experience .recents { display: flex; gap: var(--s-2); margin: var(--s-3) calc(-1 * var(--s-4)) 0; padding: 0 var(--s-4); overflow-x: auto; scrollbar-width: none; }
+.wv-experience .recents::-webkit-scrollbar { display: none; }
+.wv-experience .recents { align-items: center; }
+.wv-experience .recents-label { flex: none; font-family: var(--mono); font-size: var(--fs-label); letter-spacing: 0.14em; text-transform: uppercase; color: var(--c-fg-muted); margin-right: 2px; }
+.wv-experience .recent { flex: none; height: 44px; padding: 0 16px; border: 1px solid var(--hair-2); border-radius: var(--r-pill); background: rgba(232, 189, 126, 0.06); color: var(--c-fg); font: 500 var(--fs-caption)/1 var(--sans); white-space: nowrap; }
+.wv-experience .recent:first-child { border-color: rgba(232, 189, 126, 0.55); color: var(--c-accent); }
+/* The row to the saved sets sits under the first row and shares its rule. */
+.wv-experience .row-link { margin-top: var(--s-2); padding: 10px 2px; }
+.wv-experience .row-link + .row-link { margin-top: 0; border-top: 0; }
+.wv-experience .choose-head { margin-top: var(--s-4); margin-bottom: var(--s-2); }
+.wv-experience .foot { margin-top: var(--s-4); }
+/* Every counted exercise, under the cards (step 2): the guide's search and rows. */
+.wv-experience .all-exercises { margin-top: var(--s-6); }
+.wv-experience .all-title { margin: 0; font-family: var(--serif); font-weight: 400; font-size: var(--fs-heading); line-height: 1.1; color: var(--c-fg); }
+.wv-experience .all-note { margin: var(--s-2) 0 0; font-size: var(--fs-caption); line-height: 1.5; color: var(--c-fg-muted); text-wrap: pretty; }
+.wv-experience .all-exercises .search { margin-top: var(--s-4); }
+/* Without a tag, a row's name takes the width the tag held (David's choice, 29 September). */
+.wv-experience .all-exercises .item-btn { grid-template-columns: 56px minmax(0, 1fr); }
+.wv-experience .all-exercises .item-btn:has(.tag) { grid-template-columns: 56px minmax(0, 1fr) auto; }
+/* The longest French names keep to two lines down to 320 px (an iPhone SE, or a mini with Display Zoom). */
+.wv-experience .all-exercises .item-name { font-size: var(--fs-name-fit); }
+/* Beta in the list is gold as on the cards; the list's .tag rule loads later and would make it ash (#15). */
+.wv-experience .tag.tier-beta { color: var(--c-accent); border-color: var(--lamp-line); }
+.wv-experience .tag.tier-in-progress { font-family: var(--mono); font-size: var(--fs-label); letter-spacing: 0.08em; padding: 4px 8px; border: 1px solid var(--hair-2); color: var(--ash); border-radius: var(--r-pill); background: var(--well); }
+/* Experimental on a fitness-test row is the ash pill the guide shows, not the cards' plain caption (Entry.css .tier-experimental). */
+.wv-experience .row-link .tag { flex-shrink: 0; }
+.wv-experience .row-link .tag.tier-experimental { font-family: var(--mono); font-size: var(--fs-label); letter-spacing: 0.08em; padding: 4px 10px; border: 1px solid var(--hair-2); color: var(--c-fg-muted); display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+.wv-experience .row-link .tag.tier-roadmap { font-family: var(--mono); font-size: var(--fs-label); letter-spacing: 0.08em; padding: 4px 8px; border: 1px solid var(--lamp-line); color: var(--c-accent); border-radius: var(--r-pill); background: var(--bio-glow); display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+/* The note on anonymous usage counts (UsageNote, Choice.jsx), under "Vos séries": its button reads as a link, 44 px tall. */
+.wv-experience .usage-note { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.wv-experience .usage-note p { margin: 0; }
+.wv-experience .usage-note .text-btn { font: inherit; display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; color: var(--bone-2); text-decoration: underline; text-underline-offset: 3px; border-radius: var(--r-pill); }
+/* Its two keys side by side: turn off, and the notice (UsageNotice.jsx). */
+.wv-experience .usage-keys { display: flex; justify-content: center; flex-wrap: wrap; }
+/* The link to "À propos" (About.jsx) and "Le Manifeste" (Manifesto.jsx) at the foot of the choice. */
+.wv-experience .choice-foot-links { display: flex; justify-content: center; align-items: center; gap: 0 var(--s-2); flex-wrap: wrap; margin-top: var(--s-2); padding-bottom: var(--s-3); }
+.wv-experience .about-link { align-self: center; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 4px 10px; font-size: var(--fs-caption); color: var(--bone-2); text-decoration: underline; text-underline-offset: 3px; border-radius: var(--r-pill); }
+.wv-experience .foot-test-link { max-width: 100%; flex-wrap: nowrap; justify-content: center; gap: 5px; font-size: var(--fs-label); padding: 4px 6px; white-space: nowrap; }
+.wv-experience .foot-test-link .tag { font-family: var(--mono); font-size: var(--fs-label); letter-spacing: 0.05em; padding: 2px 6px; border: 1px solid var(--hair-2); color: var(--c-fg-muted); border-radius: var(--r-pill); text-decoration: none; }
+/* The note after the app restarted during a session (Choice.jsx, CrashNote): the usage note's line, its two keys side by side. */
+.wv-experience .crash-keys { display: flex; justify-content: center; flex-wrap: wrap; }
+.wv-experience .all-header-block { display: flex; flex-direction: column; gap: 4px; }
+.wv-experience .all-kicker { font-family: var(--mono); font-size: var(--fs-label); letter-spacing: var(--track-label); text-transform: uppercase; color: var(--c-accent); }
+.wv-experience .all-realms-bar { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin-top: var(--s-3); padding-bottom: 2px; max-width: 100%; box-sizing: border-box; -webkit-overflow-scrolling: touch; }
+.wv-experience .all-realms-bar::-webkit-scrollbar { display: none; }
+.wv-experience .all-realm-chip { flex: none; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: 5px 12px; border: 1px solid var(--hair-2); border-radius: var(--r-pill); background: var(--well); color: var(--c-fg-muted); font-size: var(--fs-caption); font-weight: 500; cursor: pointer; white-space: nowrap; transition: all var(--d-fast) var(--ease); }
+.wv-experience .all-realm-chip:hover { border-color: var(--lamp-line); color: var(--bone); }
+.wv-experience .all-realm-chip.is-active { border-color: var(--lamp-line-strong); background: var(--bio-glow); color: var(--c-accent); font-weight: 600; }
+.wv-experience .all-count-row { display: flex; align-items: center; justify-content: space-between; margin-top: var(--s-3); }
+.wv-experience .item-text-wrap { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wv-experience .item-sub-dot { color: var(--ash-2); }
+.wv-experience .item-sub-eq { color: var(--ash); }
+.wv-experience .item-sub-muscle { font-family: var(--mono); font-size: var(--fs-label); letter-spacing: 0.04em; color: var(--c-accent); }
+.wv-experience .all-exercises .item { border-bottom: 1px solid var(--hair-0); transition: background var(--d-fast); }
+.wv-experience .all-exercises .item:hover { background: var(--bio-glow); }
+.wv-experience .choose-head + .row-link { margin-top: 0; border-top: 0; }
+.wv-experience .topbar .offline-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: var(--r-pill); border: 1px solid var(--hair-2); font-family: var(--mono); font-size: var(--fs-label); letter-spacing: 0.08em; text-transform: uppercase; color: var(--bone); line-height: 1; }
+.wv-experience .topbar .offline-badge svg { width: 11px; height: 11px; color: var(--lamp); flex-shrink: 0; }
+@media (max-width: 360px) { .wv-experience .topbar .offline-badge span { display: none; } }
+@media (max-height: 700px) {
+  .wv-experience .choose-screen { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--s-2)); }
+  .wv-experience .choose-screen .title { margin-top: 8px; }
+  .wv-experience .choose-screen .sub { margin-top: 6px; }
+  .wv-experience .choose-screen.has-welcome .sub { display: none; }
+  .wv-experience .welcome { margin-top: 4px; }
+  .wv-experience .recents { margin-top: 6px; }
+  .wv-experience .rail { margin-top: 10px; }
+  .wv-experience .altar-meta { padding: 4px 18px 14px; }
+  .wv-experience .dots { margin-top: 6px; }
+  .wv-experience .row-ico { width: 38px; height: 38px; }
+  .wv-experience .row-link { margin-top: 0; padding: 3px 2px; }
+  .wv-experience .ins-row { margin-top: var(--s-1); }
+  .wv-experience .choose-head { margin-top: var(--s-1); margin-bottom: 0; }
+  .wv-experience .foot, .wv-experience .usage-note { margin-top: var(--s-1); }
+  .wv-experience .choice-foot-links { margin-top: 0; padding-bottom: 0; }
+}
+/* Short screens (a 4.7-inch iPhone in Safari or in an app's browser): the heading gives the
+   figure more room. */
+@media (max-height: 600px) {
+  .wv-experience .choose-screen .title { font-size: var(--fs-title-xs); margin-top: 8px; }
+  .wv-experience .choose-screen .sub { font-size: var(--fs-caption); line-height: 1.45; margin-top: 6px; }
+  .wv-experience .welcome { margin-top: 4px; }
+  .wv-experience .welcome-l1 { font-size: var(--fs-name); }
+  .wv-experience .welcome-l2 { display: none; }
+  .wv-experience .recents { margin-top: 6px; }
+  /* A returning visitor has swiped the cards before: the instruction gives its lines to the figure. */
+  .wv-experience .choose-screen.has-welcome .sub { display: none; }
+  .wv-experience .rail { margin-top: 10px; }
+  .wv-experience .altar-name { font-size: var(--fs-altar-xs); }
+}

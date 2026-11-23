@@ -1,0 +1,23 @@
+Front-view left/right comparison (src/lib/counting/symmetry.ts), run over the stored landmarks.
+Per set: each side's median range over the counted reps, SI = (R - L) / mean(R, L) x 100 of those medians; "flagged" when |SI| >= 15 %.
+
+Countix, both halves: 890 admitted clips; measured 0; not measured: not-compared-lift 890.
+None is compared: since 2 October only lateral raises filmed square on are, and Countix holds none (synth.txt).
+
+David's labelled sets:
+  sets-29sep/bench_press_7_side_24cc4f0b.json.gz           filmed side  shoulders 82 deg hips 79 deg  not-compared-lift
+  sets-29sep/bicep_curl_5_side_f5e5bdf2.json.gz            filmed side  shoulders 80 deg hips 78 deg  not-compared-lift
+  sets-29sep/hip_thrust_6_side_cf8c21d7.json.gz            filmed side  shoulders 87 deg hips 86 deg  not-compared-lift
+  sets-29sep/lateral_raise_9_front_43e71b40.json.gz        filmed front shoulders  4 deg hips  5 deg  SI -11 % over 8 reps (L 90, R 81)
+  sets-29sep/leg_press_13_side_1ee0ae47.json.gz            filmed side  shoulders 71 deg hips 72 deg  not-compared-lift
+  sets-29sep/overhead_press_4_front_cefdaa82.json.gz       filmed front shoulders  3 deg hips  3 deg  not-compared-lift
+  sets-29sep/overhead_press_4_front_f75638cc.json.gz       filmed front shoulders  2 deg hips  2 deg  not-compared-lift
+  sets-29sep/romanian_deadlift_8_side_b3dc2c9e.json.gz     filmed side  shoulders 81 deg hips 74 deg  not-compared-lift
+  sets-29sep/squat_7_side_21fd7ccf.json.gz                 filmed side  shoulders 71 deg hips 74 deg  not-compared-lift
+  landmarks/bench_press_7_angle_mufhcy60.json.gz           filmed angle shoulders 34 deg hips 35 deg  not-compared-lift
+  landmarks/bicep_curl_7_side_mufhf3wy.json.gz             filmed side  shoulders 42 deg hips 44 deg  not-compared-lift
+  landmarks/lat_pulldown_10_front_mufhlh4o.json.gz         filmed front shoulders 15 deg hips 40 deg  not-compared-lift
+  landmarks/lateral_raise_10_front_mufhhbun.json.gz        filmed front shoulders  4 deg hips  4 deg  SI -21 % over 10 reps (L 92, R 74) FLAGGED
+  landmarks/overhead_press_10_front_mufhjkku.json.gz       filmed front shoulders  9 deg hips  8 deg  not-compared-lift
+
+Each measured Countix clip:

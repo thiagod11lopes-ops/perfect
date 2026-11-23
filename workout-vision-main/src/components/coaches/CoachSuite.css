@@ -1,0 +1,293 @@
+/* Coach business space (CoachSuite.jsx), shown inside Espace pro (Pro.jsx), so inside .wv-experience. It had kept the
+   old app's global tokens (--text-primary, --depth-2, --bio-cyan), which turn light under prefers-color-scheme: light:
+   dark words on the dark ground and white cards. Every rule now takes the experience's tokens (design/SYSTEM.md) and
+   the showcase parts (Showcase.css): hairline cards, 44 px controls, fields on basalt, labels in mono capitals,
+   values in tabular figures, the invoice and the contract on the report's paper. No red: a cost is ash, a gain lamp.
+   Status: convention (the app's design system; no measurement involved). */
+
+.wv-experience .coach-suite-container { display: flex; flex-direction: column; gap: var(--s-5); margin-top: var(--s-5); min-width: 0; color: var(--c-fg); font-family: var(--sans); }
+.wv-experience .coach-suite-container svg { flex: none; }
+.wv-experience .coach-suite-container :is(h3, h4) { margin: 0; font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+/* The four spaces: one rail of chips, from edge to edge (Showcase.css .sc-rail). */
+.wv-experience .coach-suite-container .suite-nav-bar {
+  display: flex; gap: var(--s-2); overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
+  margin-inline: calc(var(--gut) * -1); padding: 2px var(--gut); scroll-padding-inline: var(--gut);
+  scroll-snap-type: x proximity; scrollbar-width: none;
+}
+.wv-experience .coach-suite-container .suite-nav-bar::-webkit-scrollbar { display: none; }
+.wv-experience .coach-suite-container .suite-tab-btn {
+  flex: none; min-height: 44px; padding: 8px 14px; border-radius: var(--r-s); border: 1px solid var(--c-rule);
+  font-size: var(--fs-caption); line-height: 1.3; color: var(--bone-2); white-space: nowrap; scroll-snap-align: start;
+}
+.wv-experience .coach-suite-container .suite-tab-btn > span { display: inline-flex; align-items: center; gap: var(--s-2); }
+.wv-experience .coach-suite-container .suite-tab-btn svg { width: 15px; height: 15px; }
+.wv-experience .coach-suite-container .suite-tab-btn.active { border-color: var(--lamp-line-strong); color: var(--lamp-hi); background: color-mix(in srgb, var(--lamp) 10%, transparent); }
+
+/* A space: its head (serif name, caption, its switch), then its blocks, 16 apart. */
+.wv-experience .coach-suite-container .suite-content-section { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
+.wv-experience .coach-suite-container .section-header-row { display: flex; flex-direction: column; align-items: stretch; gap: var(--s-3); }
+.wv-experience .coach-suite-container .section-header-row h3 { font-family: var(--serif); font-size: var(--fs-heading); line-height: 1.1; color: var(--c-fg); text-wrap: balance; }
+.wv-experience .coach-suite-container :is(.invoice-builder-header, .livre-header, .annual-pl-header, .vision-upload-header, .barcode-header-row) h4,
+.wv-experience .coach-suite-container .meal-history-section h4,
+.wv-experience .coach-suite-container .detail-pane-header h4 { font-family: var(--serif); font-size: var(--fs-name); line-height: 1.1; color: var(--c-fg); text-wrap: balance; }
+.wv-experience .coach-suite-container .section-subtext { display: block; margin: var(--s-2) 0 0; font-size: var(--fs-caption); line-height: 1.5; color: var(--c-fg-muted); text-wrap: pretty; }
+.wv-experience .coach-suite-container .section-header-row > :is(button, .regime-toggle, .nutrition-mode-switcher) { align-self: stretch; }
+
+/* Cards: hairline, the large radius for a block, the small one for a value. */
+.wv-experience .coach-suite-container :is(.add-client-card, .carnet-status-card, .contract-modal-card, .accounting-tuners-card, .invoice-builder-card, .livre-recettes-card, .annual-pl-card, .client-target-summary, .adherence-card, .vision-plate-workbench, .barcode-scanner-section, .scanned-product-card, .physio-exercise-card, .break-even-banner) {
+  display: flex; flex-direction: column; gap: var(--s-3); min-width: 0; padding: 16px 18px; border-radius: var(--r-l); border: 1px solid var(--c-rule);
+}
+.wv-experience .coach-suite-container :is(.detail-box, .hud-card, .macro-card, .prod-m-box, .session-history-item, .meal-history-card, .comp-row) { min-width: 0; padding: 12px 14px; border-radius: var(--r-s); border: 1px solid var(--c-rule); }
+.wv-experience .coach-suite-container .empty-clients-box { padding: 22px 18px; border-radius: var(--r-l); border: 1px dashed var(--hair-2); text-align: center; }
+.wv-experience .coach-suite-container .empty-clients-box p { margin: 0; font-size: var(--fs-body); line-height: 1.5; color: var(--c-fg-muted); text-wrap: balance; }
+.wv-experience .coach-suite-container .card-top-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-3); }
+.wv-experience .coach-suite-container .card-top-row b { font-family: var(--serif); font-weight: 400; font-size: var(--fs-name); line-height: 1.1; color: var(--c-fg); }
+
+/* Buttons: the app's four levels, compact (44 px). */
+.wv-experience .coach-suite-container :is(.suite-action-btn, .quick-suite-btn, .btn-save, .btn-cancel, .copy-invoice-btn, .log-session-btn, .add-to-prog-btn, .delete-client-btn, .text-toggle-btn, .staple-chip) {
+  min-height: 44px; padding: 0 16px; border-radius: var(--r-s); display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2);
+  font-size: var(--fs-caption); font-weight: 500; line-height: 1.25; text-align: center; text-decoration: none;
+}
+.wv-experience .coach-suite-container :is(.suite-action-btn, .btn-save, .log-session-btn, .add-to-prog-btn) { border: 1px solid var(--lamp-line); color: var(--lamp-hi); }
+.wv-experience .coach-suite-container :is(.quick-suite-btn, .btn-cancel, .copy-invoice-btn, .staple-chip) { border: 1px solid var(--hair-2); color: var(--c-fg); }
+.wv-experience .coach-suite-container :is(.delete-client-btn, .text-toggle-btn) { padding: 0 4px; color: var(--c-fg-muted); }
+.wv-experience .coach-suite-container :is(.suite-action-btn, .quick-suite-btn, .copy-invoice-btn, .btn-save, .btn-cancel) svg { width: 15px; height: 15px; }
+.wv-experience .coach-suite-container .text-close-btn { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--hair-2); color: var(--c-fg); }
+.wv-experience .coach-suite-container .text-close-btn svg { width: 15px; height: 15px; }
+.wv-experience .coach-suite-container .form-actions-row, .wv-experience .coach-suite-container .contract-modal-actions, .wv-experience .coach-suite-container .invoice-actions, .wv-experience .coach-suite-container .detail-action-buttons { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.wv-experience .coach-suite-container .form-actions-row > *, .wv-experience .coach-suite-container .contract-modal-actions > *, .wv-experience .coach-suite-container .invoice-actions > *, .wv-experience .coach-suite-container .detail-action-buttons > * { flex: 1 1 auto; }
+
+/* Fields: basalt, a hairline, 48 px, 16 px words (no iOS zoom). */
+.wv-experience .coach-suite-container :is(input[type="text"], input[type="number"], select, textarea) {
+  width: 100%; min-width: 0; min-height: 48px; padding: 0 14px; border-radius: var(--r-s); border: 1px solid var(--c-rule);
+  background: var(--basalt); color: var(--c-fg); font: 400 16px/1.4 var(--sans); outline: none; -webkit-appearance: none; appearance: none;
+}
+.wv-experience .coach-suite-container textarea { padding: 12px 14px; min-height: 76px; resize: vertical; }
+.wv-experience .coach-suite-container select { padding-right: 36px; background-image: linear-gradient(45deg, transparent 50%, var(--c-fg-muted) 50%), linear-gradient(135deg, var(--c-fg-muted) 50%, transparent 50%); background-position: calc(100% - 20px) 50%, calc(100% - 15px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
+.wv-experience .coach-suite-container :is(input, select, textarea):focus { border-color: var(--lamp-line-strong); }
+.wv-experience .coach-suite-container ::placeholder { color: var(--ash-2); }
+.wv-experience .coach-suite-container :is(.input-group, .invoice-field, .log-session-box, .contract-controls-bar) > label,
+.wv-experience .coach-suite-container :is(.detail-box-label, .carnet-label, .hud-label, .macro-name, .prod-brand, .tuner-label) {
+  display: block; font-family: var(--mono); font-size: var(--fs-label); line-height: 1.4; letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-fg-muted);
+}
+.wv-experience .coach-suite-container .form-grid, .wv-experience .coach-suite-container .invoice-controls-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-3); margin: 0; }
+.wv-experience .coach-suite-container .input-group, .wv-experience .coach-suite-container .invoice-field, .wv-experience .coach-suite-container .contract-controls-bar { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.wv-experience .coach-suite-container .inline-inputs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s-2); }
+@media (min-width: 520px) {
+  .wv-experience .coach-suite-container .form-grid, .wv-experience .coach-suite-container .invoice-controls-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wv-experience .coach-suite-container .form-grid .full-width { grid-column: 1 / -1; }
+}
+
+/* Clients: the list, then the chosen client's file. */
+.wv-experience .coach-suite-container .clients-split-layout { display: flex; flex-direction: column; gap: var(--s-4); }
+.wv-experience .coach-suite-container .clients-sidebar { display: flex; flex-direction: column; gap: var(--s-2); }
+.wv-experience .coach-suite-container .client-item-card { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-items: center; gap: var(--s-3); min-height: 56px; padding: 8px 14px; border-radius: var(--r-s); border: 1px solid var(--c-rule); cursor: pointer; }
+.wv-experience .coach-suite-container .client-item-card.active { border-color: var(--lamp-line-strong); background: color-mix(in srgb, var(--lamp) 8%, transparent); }
+.wv-experience .coach-suite-container .client-initials { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--basalt); border: 1px solid var(--hair-2); font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; color: var(--lamp-hi); }
+.wv-experience .coach-suite-container .client-card-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wv-experience .coach-suite-container .client-card-name { font-size: var(--fs-body); font-weight: 500; color: var(--c-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wv-experience .coach-suite-container .client-card-sub, .wv-experience .coach-suite-container .detail-meta { font-size: var(--fs-caption); line-height: 1.4; color: var(--c-fg-muted); font-variant-numeric: tabular-nums; }
+.wv-experience .coach-suite-container .client-detail-pane { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
+.wv-experience .coach-suite-container .detail-pane-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-3); }
+.wv-experience .coach-suite-container .detail-pane-header > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+
+/* The coaching pack: the count, what is left, a bar in the lamp. */
+.wv-experience .coach-suite-container .carnet-top-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-3); }
+.wv-experience .coach-suite-container .carnet-fraction { margin-top: 6px; font-size: var(--fs-caption); color: var(--bone-2); font-variant-numeric: tabular-nums; }
+.wv-experience .coach-suite-container .carnet-fraction b { font-size: 21px; font-weight: 600; color: var(--c-fg); }
+.wv-experience .coach-suite-container :is(.carnet-remaining-badge, .adherence-score-pill, .plate-conf-tag, .meal-source-tag, .physio-region-tag, .camera-view-tag, .prog-badge, .comp-badge) {
+  display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 100%;
+  font-family: var(--mono); font-size: var(--fs-label); line-height: 1.3; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 5px 10px 4px; border-radius: var(--r-pill); border: 1px solid var(--hair-2); color: var(--c-fg-muted);
+}
+.wv-experience .coach-suite-container :is(.carnet-remaining-badge, .adherence-score-pill, .physio-region-tag, .prog-badge.prog) { border-color: var(--lamp-line); color: var(--lamp-hi); }
+.wv-experience .coach-suite-container :is(.comp-badge, .meal-source-tag, .camera-view-tag) svg { width: 12px; height: 12px; }
+.wv-experience .coach-suite-container .carnet-progress-bar, .wv-experience .coach-suite-container .adherence-bar-container { height: 6px; border-radius: 3px; background: var(--hair-2); overflow: hidden; }
+.wv-experience .coach-suite-container .carnet-progress-fill, .wv-experience .coach-suite-container .adherence-bar-fill { height: 100%; border-radius: 3px; background: var(--c-accent); }
+.wv-experience .coach-suite-container .carnet-action-bar { display: flex; }
+.wv-experience .coach-suite-container .carnet-action-bar .log-session-btn { flex: 1; }
+.wv-experience .coach-suite-container .log-session-box { display: flex; flex-direction: column; gap: var(--s-2); padding-top: var(--s-3); border-top: 1px solid var(--hair-0); }
+
+/* The session log and the client's notes. */
+.wv-experience .coach-suite-container .session-history-block { display: flex; flex-direction: column; gap: var(--s-2); }
+.wv-experience .coach-suite-container .session-cards-list { display: flex; flex-direction: column; gap: var(--s-2); }
+.wv-experience .coach-suite-container .session-history-item { display: flex; flex-direction: column; gap: 4px; }
+.wv-experience .coach-suite-container .session-history-date { font-family: var(--mono); font-size: var(--fs-label); letter-spacing: 0.08em; color: var(--c-fg-muted); font-variant-numeric: tabular-nums; }
+.wv-experience .coach-suite-container .session-history-desc { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-caption); color: var(--bone-2); }
+.wv-experience .coach-suite-container .session-history-desc strong { font-weight: 500; color: var(--c-fg); }
+.wv-experience .coach-suite-container .detail-cards-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-2); }
+.wv-experience .coach-suite-container .detail-box p { margin: 6px 0 0; font-size: var(--fs-caption); line-height: 1.5; color: var(--bone-2); }
+
+/* The contract and the invoice: on the report's paper (Report.css), a document to read, not a screen. */
+.wv-experience .coach-suite-container .contract-paper-preview, .wv-experience .coach-suite-container .invoice-preview-sheet {
+  max-width: 100%; border-radius: var(--r-paper); background: var(--paper); color: var(--paper-ink); padding: 16px; font-size: 12px; line-height: 1.5; font-variant-numeric: tabular-nums;
+}
+.wv-experience .coach-suite-container .contract-paper-preview { max-height: 360px; overflow: auto; overscroll-behavior: contain; }
+.wv-experience .coach-suite-container .contract-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 400 12px/1.55 var(--sans); color: var(--paper-ink); }
+.wv-experience .coach-suite-container .inv-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--s-2); padding-bottom: 10px; border-bottom: 1px solid var(--paper-rule); }
+.wv-experience .coach-suite-container .inv-num { font-family: var(--mono); font-size: var(--fs-label); letter-spacing: 0.12em; color: var(--paper-gold); }
+.wv-experience .coach-suite-container .inv-date { font-size: 11.5px; color: var(--paper-ash); }
+.wv-experience .coach-suite-container .inv-parties { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-3); padding: 12px 0; }
+.wv-experience .coach-suite-container .inv-parties > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.wv-experience .coach-suite-container .inv-parties span { color: var(--paper-ash); }
+.wv-experience .coach-suite-container .inv-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.wv-experience .coach-suite-container .inv-table th { padding: 6px 6px 6px 0; text-align: left; font-family: var(--mono); font-weight: 400; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--paper-ash); border-bottom: 1px solid var(--paper-rule); }
+.wv-experience .coach-suite-container .inv-table td { padding: 8px 6px 8px 0; border-bottom: 1px solid var(--paper-rule-2); vertical-align: top; }
+.wv-experience .coach-suite-container .inv-table :is(th, td):not(:first-child) { text-align: right; white-space: nowrap; }
+.wv-experience .coach-suite-container .inv-total-row { display: flex; flex-direction: column; gap: var(--s-3); padding-top: 12px; }
+.wv-experience .coach-suite-container .inv-legal-mentions { display: flex; flex-direction: column; gap: 2px; }
+.wv-experience .coach-suite-container .inv-legal-mentions small { font-size: 10px; line-height: 1.45; color: var(--paper-ash); }
+.wv-experience .coach-suite-container .inv-amounts { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.wv-experience .coach-suite-container .total-ttc { margin-top: 4px; font-size: 14px; color: var(--paper-ink); }
+
+/* Accounting: the regime switch, the compliance tags, the three sliders, the four figures. */
+.wv-experience .coach-suite-container .regime-toggle, .wv-experience .coach-suite-container .nutrition-mode-switcher, .wv-experience .coach-suite-container .nutrition-goal-selector {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; padding: 3px; border-radius: var(--r-s); background: var(--basalt); border: 1px solid var(--c-rule);
+}
+.wv-experience .coach-suite-container :is(.regime-btn, .mode-btn, .goal-btn) {
+  min-height: 44px; padding: 6px 8px; border-radius: 11px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  font-size: var(--fs-caption); font-weight: 500; line-height: 1.25; color: var(--bone-2); text-align: center;
+}
+.wv-experience .coach-suite-container :is(.regime-btn, .mode-btn, .goal-btn).active { background: var(--c-accent); color: var(--c-on-accent); }
+.wv-experience .coach-suite-container :is(.mode-btn) svg { width: 14px; height: 14px; }
+.wv-experience .coach-suite-container .compliance-badge-bar { display: flex; flex-wrap: wrap; gap: 6px; }
+.wv-experience .coach-suite-container .comp-badge svg { color: var(--c-accent); }
+.wv-experience .coach-suite-container .financial-hud-grid, .wv-experience .coach-suite-container .target-macros-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-2); }
+.wv-experience .coach-suite-container .hud-card, .wv-experience .coach-suite-container .macro-card { display: flex; flex-direction: column; gap: 6px; }
+.wv-experience .coach-suite-container .take-home-card { border-color: var(--lamp-line); }
+.wv-experience .coach-suite-container :is(.hud-num, .macro-val, .plate-cal-num) { font-weight: 600; font-size: 21px; line-height: 1.15; letter-spacing: -0.01em; color: var(--c-fg); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.wv-experience .coach-suite-container :is(.hud-sub, .macro-unit) { font-size: var(--fs-caption); line-height: 1.4; color: var(--c-fg-muted); font-variant-numeric: tabular-nums; }
+.wv-experience .coach-suite-container .macro-name { order: -1; }
+.wv-experience .coach-suite-container .negative { color: var(--c-fg-muted); }
+.wv-experience .coach-suite-container .positive { color: var(--lamp-hi); }
+.wv-experience .coach-suite-container .break-even-banner { flex-direction: row; align-items: flex-start; gap: var(--s-3); font-size: var(--fs-caption); line-height: 1.5; color: var(--bone-2); background: color-mix(in srgb, var(--lamp) 5%, transparent); }
+.wv-experience .coach-suite-container .break-even-banner strong { font-weight: 600; color: var(--c-fg); }
+.wv-experience .coach-suite-container .be-icon { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--lamp-line); color: var(--c-accent); }
+.wv-experience .coach-suite-container .be-icon svg { width: 14px; height: 14px; }
+
+/* The invoice builder, the ledger and the twelve months: heads that stack, tables that scroll in their own box. */
+.wv-experience .coach-suite-container :is(.invoice-builder-header, .livre-header, .vision-upload-header, .barcode-header-row) { display: flex; flex-direction: column; align-items: stretch; gap: var(--s-3); }
+.wv-experience .coach-suite-container .annual-pl-header { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-2); cursor: pointer; }
+.wv-experience .coach-suite-container .annual-pl-header > div > span { display: block; margin-top: var(--s-2); font-size: var(--fs-caption); line-height: 1.5; color: var(--c-fg-muted); }
+.wv-experience .coach-suite-container .livre-table-wrap, .wv-experience .coach-suite-container .annual-table-wrap { overflow-x: auto; overscroll-behavior-x: contain; margin-inline: -18px; padding-inline: 18px; }
+.wv-experience .coach-suite-container :is(.livre-table, .annual-table) { width: 100%; min-width: 560px; border-collapse: collapse; font-size: var(--fs-caption); font-variant-numeric: tabular-nums; }
+.wv-experience .coach-suite-container :is(.livre-table, .annual-table) th { padding: 0 12px 10px 0; text-align: left; white-space: nowrap; font-family: var(--mono); font-weight: 400; font-size: var(--fs-label); letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-fg-muted); border-bottom: 1px solid var(--c-rule); }
+.wv-experience .coach-suite-container :is(.livre-table, .annual-table) td { padding: 10px 12px 10px 0; color: var(--bone-2); border-bottom: 1px solid var(--hair-0); white-space: nowrap; }
+.wv-experience .coach-suite-container :is(.livre-table, .annual-table) :is(b, strong) { font-weight: 600; color: var(--c-fg); }
+.wv-experience .coach-suite-container .annual-table .peak-month td { background: color-mix(in srgb, var(--lamp) 6%, transparent); }
+
+/* Nutrition: the client's targets, the week's observance, the plate, the barcode. */
+.wv-experience .coach-suite-container .nutrition-cards-layout { display: flex; flex-direction: column; gap: var(--s-3); }
+.wv-experience .coach-suite-container .summary-client-name { font-size: var(--fs-caption); color: var(--c-fg-muted); }
+.wv-experience .coach-suite-container .summary-client-name b { font-weight: 600; color: var(--c-fg); }
+.wv-experience .coach-suite-container .adherence-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-3); }
+.wv-experience .coach-suite-container .adherence-header > b { font-size: var(--fs-body); font-weight: 500; line-height: 1.35; color: var(--c-fg); }
+.wv-experience .coach-suite-container .adherence-tags, .wv-experience .coach-suite-container .plate-tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; flex: none; }
+.wv-experience .coach-suite-container .adherence-comment, .wv-experience .coach-suite-container .analysis-note-text { margin: 0; font-size: var(--fs-caption); line-height: 1.5; color: var(--c-fg-muted); }
+.wv-experience .coach-suite-container .vision-plate-section, .wv-experience .coach-suite-container .barcode-scanner-section { display: flex; flex-direction: column; gap: var(--s-3); }
+.wv-experience .coach-suite-container .vision-plate-workbench { gap: var(--s-4); }
+.wv-experience .coach-suite-container .canvas-wrapper { position: relative; width: min(100%, 280px); aspect-ratio: 1; margin: 0 auto; border-radius: var(--r-l); overflow: hidden; background: var(--well); border: 1px solid var(--c-rule); }
+.wv-experience .coach-suite-container .plate-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.wv-experience .coach-suite-container .canvas-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-2); padding: var(--s-4); text-align: center; cursor: pointer; color: var(--c-fg-muted); }
+.wv-experience .coach-suite-container .canvas-placeholder svg { width: 22px; height: 22px; color: var(--c-accent); }
+.wv-experience .coach-suite-container .canvas-placeholder p { margin: 0; font-size: var(--fs-caption); line-height: 1.45; }
+.wv-experience .coach-suite-container .plate-results-pane { display: flex; flex-direction: column; gap: var(--s-3); }
+.wv-experience .coach-suite-container .plate-summary-top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-3); }
+.wv-experience .coach-suite-container .plate-summary-top > div { display: flex; flex-direction: column; gap: 4px; }
+.wv-experience .coach-suite-container .plate-grams-sub { font-size: var(--fs-caption); color: var(--c-fg-muted); }
+.wv-experience .coach-suite-container .components-list { display: flex; flex-direction: column; gap: var(--s-2); }
+.wv-experience .coach-suite-container .comp-header { display: flex; align-items: center; gap: var(--s-2); }
+.wv-experience .coach-suite-container .comp-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.wv-experience .coach-suite-container .comp-name { flex: 1; min-width: 0; font-size: var(--fs-caption); font-weight: 500; color: var(--c-fg); }
+.wv-experience .coach-suite-container .comp-grams { font-size: var(--fs-caption); font-weight: 600; color: var(--c-fg); font-variant-numeric: tabular-nums; }
+.wv-experience .coach-suite-container .comp-macros-mini { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; font-size: 12px; color: var(--c-fg-muted); font-variant-numeric: tabular-nums; }
+.wv-experience .coach-suite-container :is(.plate-results-pane, .scanned-product-card) > .suite-action-btn { width: 100%; }
+.wv-experience .coach-suite-container .barcode-input-bar { display: flex; gap: var(--s-2); }
+.wv-experience .coach-suite-container .barcode-input-bar input { flex: 1; }
+.wv-experience .coach-suite-container .barcode-input-bar .suite-action-btn { flex: none; }
+.wv-experience .coach-suite-container .staples-chips-row { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.wv-experience .coach-suite-container .staples-label { flex-basis: 100%; font-family: var(--mono); font-size: var(--fs-label); letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-fg-muted); }
+.wv-experience .coach-suite-container .prod-top-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-3); }
+.wv-experience .coach-suite-container .prod-top-row > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.wv-experience .coach-suite-container .prod-name { font-family: var(--serif); font-size: var(--fs-name); line-height: 1.1; color: var(--c-fg); }
+.wv-experience .coach-suite-container .prod-sub { font-size: var(--fs-caption); color: var(--c-fg-muted); font-variant-numeric: tabular-nums; }
+/* The Nutri-Score letter keeps the scheme's own colours: it is the label of the scheme, not a colour of the app. */
+.wv-experience .coach-suite-container .nutriscore-badge { flex: none; padding: 5px 10px 4px; border-radius: var(--r-pill); font-family: var(--mono); font-size: var(--fs-label); font-weight: 700; letter-spacing: 0.06em; }
+.wv-experience .coach-suite-container .nutriscore-badge.ns-a { background: var(--ns-green-dark); color: var(--c-fg); }
+.wv-experience .coach-suite-container .nutriscore-badge.ns-b { background: var(--ns-green-light); color: var(--c-fg); }
+.wv-experience .coach-suite-container .nutriscore-badge.ns-c { background: var(--ns-yellow); color: var(--void); }
+.wv-experience .coach-suite-container .nutriscore-badge.ns-d { background: var(--ns-orange); color: var(--c-fg); }
+.wv-experience .coach-suite-container .nutriscore-badge.ns-e { background: var(--ns-red); color: var(--c-fg); }
+.wv-experience .coach-suite-container .prod-macros-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.wv-experience .coach-suite-container .prod-m-box { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 4px; text-align: center; }
+.wv-experience .coach-suite-container .prod-m-box b { font-size: var(--fs-body); font-weight: 600; color: var(--c-fg); font-variant-numeric: tabular-nums; }
+.wv-experience .coach-suite-container .prod-m-box span { font-size: 11px; color: var(--c-fg-muted); }
+.wv-experience .coach-suite-container .meal-history-section { display: flex; flex-direction: column; gap: var(--s-3); }
+.wv-experience .coach-suite-container .meals-list { display: flex; flex-direction: column; gap: var(--s-2); }
+.wv-experience .coach-suite-container .meal-history-card { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-3); }
+.wv-experience .coach-suite-container .meal-h-left { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; font-size: var(--fs-caption); color: var(--c-fg); }
+.wv-experience .coach-suite-container .meal-h-left strong { font-weight: 500; }
+.wv-experience .coach-suite-container .meal-date-str { font-size: 12px; color: var(--c-fg-muted); }
+.wv-experience .coach-suite-container .meal-h-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; font-size: 12px; color: var(--c-fg-muted); font-variant-numeric: tabular-nums; text-align: right; }
+.wv-experience .coach-suite-container .meal-h-right b { font-size: var(--fs-body); font-weight: 600; color: var(--c-fg); }
+
+/* Physio by joint: the regions as chips, then one card per exercise. */
+.wv-experience .coach-suite-container .physio-chips-row { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.wv-experience .coach-suite-container .physio-chip { min-height: 44px; padding: 8px 14px; border-radius: var(--r-s); border: 1px solid var(--c-rule); font-size: var(--fs-caption); line-height: 1.3; color: var(--bone-2); }
+.wv-experience .coach-suite-container .physio-chip.active { border-color: var(--lamp-line-strong); color: var(--lamp-hi); background: color-mix(in srgb, var(--lamp) 10%, transparent); }
+.wv-experience .coach-suite-container .physio-cards-grid { display: flex; flex-direction: column; gap: var(--s-3); }
+.wv-experience .coach-suite-container .physio-card-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
+.wv-experience .coach-suite-container .physio-ex-name { font-family: var(--serif); font-size: var(--fs-name); line-height: 1.1; color: var(--c-fg); text-wrap: balance; }
+.wv-experience .coach-suite-container .physio-rationale { margin: 0; font-size: var(--fs-caption); line-height: 1.55; color: var(--bone-2); }
+.wv-experience .coach-suite-container .physio-progression-box { display: flex; flex-direction: column; gap: var(--s-2); padding-top: var(--s-3); border-top: 1px solid var(--hair-0); }
+.wv-experience .coach-suite-container .prog-line { display: flex; align-items: baseline; gap: var(--s-2); font-size: var(--fs-caption); line-height: 1.45; color: var(--bone-2); }
+.wv-experience .coach-suite-container .prog-line .prog-badge { min-width: 7.5em; justify-content: center; }
+.wv-experience .coach-suite-container .add-to-prog-btn { width: 100%; }
+
+/* The office after the honesty pass of 14 October 2026 (CoachAccounting.jsx, the contract): what is missing before a
+   document can be made, a hint under a field, the issued invoices. Tokens only (raw-colours.test.js). */
+.wv-experience .coach-suite-container .office-flush { margin: 0; }
+.wv-experience .coach-suite-container .office-strong { margin: 0; font-size: var(--fs-body); font-weight: 500; line-height: 1.4; color: var(--c-fg); font-variant-numeric: tabular-nums; }
+.wv-experience .coach-suite-container .office-label { display: block; font-family: var(--mono); font-size: var(--fs-label); line-height: 1.4; letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-fg-muted); }
+.wv-experience .coach-suite-container .office-hint { font-size: var(--fs-caption); line-height: 1.45; color: var(--lamp-hi); }
+.wv-experience .coach-suite-container .invoice-preview-sheet .office-hint { color: var(--paper-ash); margin: 10px 0 0; }
+.wv-experience .coach-suite-container [aria-invalid="true"] { border-color: var(--lamp-line-strong); }
+.wv-experience .coach-suite-container .office-missing { display: flex; flex-direction: column; gap: var(--s-2); padding: 14px 16px; border-radius: var(--r-s); border: 1px dashed var(--lamp-line); background: color-mix(in srgb, var(--lamp) 5%, transparent); }
+.wv-experience .coach-suite-container .office-missing ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.wv-experience .coach-suite-container .office-missing li { position: relative; padding-left: 16px; font-size: var(--fs-caption); line-height: 1.45; color: var(--bone-2); overflow-wrap: anywhere; }
+.wv-experience .coach-suite-container .office-missing li::before { content: ""; position: absolute; left: 2px; top: 0.55em; width: 6px; height: 6px; border-radius: 50%; background: var(--c-accent); }
+.wv-experience .coach-suite-container .office-missing li .comp-badge { margin-right: 6px; }
+.wv-experience .coach-suite-container .office-invoices { display: flex; flex-direction: column; gap: var(--s-2); }
+.wv-experience .coach-suite-container .office-invoice { display: flex; flex-direction: column; gap: var(--s-3); padding: 14px 16px; border-radius: var(--r-s); border: 1px solid var(--c-rule); }
+.wv-experience .coach-suite-container .office-invoice-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-2); }
+.wv-experience .coach-suite-container .office-num { color: var(--lamp-hi); }
+.wv-experience .coach-suite-container .office-invoice-line { margin: 0; font-size: var(--fs-caption); line-height: 1.5; color: var(--bone-2); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.wv-experience .coach-suite-container .office-invoice-line b { font-weight: 600; color: var(--c-fg); }
+.wv-experience .coach-suite-container .comp-badge.is-paid { border-color: var(--lamp-line); color: var(--lamp-hi); }
+.wv-experience .coach-suite-container :is(button, .btn-save):disabled { opacity: 0.45; cursor: default; }
+.wv-experience .coach-suite-container input[type="date"] { width: 100%; min-width: 0; min-height: 48px; padding: 0 14px; border-radius: var(--r-s); border: 1px solid var(--c-rule); background: var(--basalt); color: var(--c-fg); font: 400 16px/1.4 var(--sans); color-scheme: dark; }
+.wv-experience .coach-suite-container .sc-switch { margin: 0; }
+.wv-experience .coach-suite-container .office-hint.is-quiet { color: var(--c-fg-muted); margin: 6px 0 0; }
+/* A client in the list is a button (it selects): the card's look, the whole width, its words to the left. */
+.wv-experience .coach-suite-container button.client-item-card { width: 100%; text-align: left; font: inherit; color: inherit; background: none; }
+.wv-experience .coach-suite-container .client-item-card .client-card-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wv-experience .coach-suite-container .carnet-status-card > .office-strong { margin: 0; }
+.wv-experience .coach-suite-container .carnet-action-bar .quick-suite-btn { flex: 1; }
+/* The barcode: its field (with its label) beside the button, aligned on the field's foot. */
+.wv-experience .coach-suite-container .barcode-input-bar { align-items: flex-end; }
+.wv-experience .coach-suite-container .office-grow { flex: 1; min-width: 0; }
+.wv-experience .coach-suite-container .office-end { justify-content: flex-end; }
+.wv-experience .coach-suite-container .office-end .suite-action-btn { width: 100%; }
+.wv-experience .coach-suite-container .office-link { color: var(--lamp-hi); text-decoration: underline; text-underline-offset: 3px; }
+.wv-experience .coach-suite-container .vision-plate-workbench > .office-flush { margin: 0; }
+.wv-experience .coach-suite-container .office-stack { display: flex; flex-direction: column; gap: var(--s-2); }
+/* A logged meal: its name and date, then what it holds, on one line under it at phone width. */
+.wv-experience .coach-suite-container .meal-history-card { flex-direction: column; align-items: stretch; gap: var(--s-2); }
+.wv-experience .coach-suite-container .meal-history-card .meal-h-right { flex-direction: row; flex-wrap: wrap; align-items: baseline; justify-content: flex-start; gap: 4px 10px; text-align: left; }
+/* A file to check (a client saved before 14 October 2026): the badge beside the name. */
+.wv-experience .coach-suite-container .summary-client-name .comp-badge { margin-left: 8px; vertical-align: 1px; }
+.wv-experience .coach-suite-container .detail-meta .comp-badge { display: flex; width: fit-content; margin-top: 6px; }
+/* An invoice cancelled by a credit note: kept in the list, its line struck through, its badge naming the avoir. */
+.wv-experience .coach-suite-container .office-invoice.is-cancelled .office-invoice-line { text-decoration: line-through; text-decoration-color: var(--c-fg-muted); }
+.wv-experience .coach-suite-container .livre-header .section-subtext { margin-top: 4px; }

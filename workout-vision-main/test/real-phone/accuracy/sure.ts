@@ -1,0 +1,52 @@
+// Right when it says it is sure (CLAUDE.md R16, David, 18 October 2026: "the app is right whenever it says it is sure,
+// says plainly when it is not, and is sure more often each month"). ROADMAP.md item 1.
+// A set is shown as sure when the result screen shows its count with no question (Result.jsx: not refused, a count
+// above 0, flagged by neither the body check nor the sensitivity check, on every phone since 19 October 2026); a first
+// reading counts the body check alone, as the app shipped before that day, so the line shows what the second check adds.
+// Measured, decides nothing.
+import { SENSITIVITY_GRID, sensitivityAsks, summarizeCount } from '../../../src/lib/coreAnalysis';
+
+/** One set as the result screen would show it: err is |count - label| (null when no count is shown). */
+export type SureRow = { err: number | null; flagged: boolean; moved: boolean; tail?: boolean };
+
+/**
+ * The row of a set from the app's result (coreAnalysis.js path, body check included) against its label. countOf gives
+ * the number scored from a result (a public whole clip is scored inside its labelled window, sets.ts countInWindow); the
+ * sensitivity check's recounts (coreAnalysis.js SENSITIVITY_GRID, as withSensitivity) are read through it too, so
+ * "moved" describes the number scored.
+ */
+export function sureRow(result: any, lift: string, label: number, countOf: (r: any) => number = r => r.count): SureRow {
+  // A count is shown when the result screen shows one (Result.jsx: not refused, a count above 0). Until 13 November 2026
+  // a whole clip whose labelled window held none of the app's reps was left out, though the screen showed its count as
+  // sure: such a set is now scored, its error against the label (card 016, sure-parity.test.ts).
+  if (!result || result.refused || !(result.count > 0)) return { err: null, flagged: false, moved: false };
+  const scored = countOf(result);
+  // The rule the result screen applies (coreAnalysis.js sensitivityAsks, 11 November 2026), on the count the screen shows:
+  // the whole clip's (result.count), never the number scored inside a labelled window. Until 13 November 2026 the
+  // recounts were read through countOf, so on whole clips the figure judged a different number from the screen's. A
+  // result the app did not check (no sensitivity field and no landmarks to recount) is not asked, as on the screen.
+  const recounts: (number | null)[] | null = result.sensitivity?.counts ?? (Array.isArray(result.worldLandmarks) ? SENSITIVITY_GRID.map(tuning => {
+    const r: any = summarizeCount(result.worldLandmarks, result.timestamps, lift, tuning, result.imageLandmarks ?? undefined);
+    return r.refused ? null : r.count;
+  }) : null);
+  const moved = Array.isArray(recounts) && recounts.some(c => c !== result.count) && sensitivityAsks(result.count, recounts);
+  // Since 19 October 2026 the result screen asks on a refused head rep; since 14 November 2026 it also asks when poseDoubt flags gaps or low coverage (Result.jsx);
+  // the open last rise (coreAnalysis.js tailOpen) asks on David's #collecte phone only (card 039): measured apart, as tail.
+  return { err: Math.abs((Number.isFinite(scored) ? scored : 0) - label), flagged: result.bodyCheck?.flagged === true, moved: moved || result.headRefused === true || result.doubt?.flagged === true, tail: result.tailOpen === true };
+}
+
+const pct = (k: number, n: number) => (n ? Math.round((100 * k) / n) : 0);
+function part(rows: SureRow[]) {
+  const n = rows.length, exact = rows.filter(r => r.err === 0).length, near = rows.filter(r => r.err! >= 1 && r.err! <= 2).length, bad = rows.filter(r => r.err! >= 3).length;
+  return `${n}: ${exact} exact (${pct(exact, n)}%), ${near} off by 1 or 2, ${bad} off by 3+`;
+}
+
+/** The line printed under each scoreboard head. */
+export function sureLine(rows: SureRow[]) {
+  const counted = rows.filter(r => r.err !== null);
+  const sure = counted.filter(r => !r.flagged), sureSens = sure.filter(r => !r.moved);
+  return `Right when sure (R16, sure.ts; measured, decides nothing): of ${rows.length} sets that decide, ${counted.length} counted. `
+    + `With the body check alone (before 19 October 2026), shown as sure ${part(sure)}; asked to confirm ${part(counted.filter(r => r.flagged))}. `
+    + `As the app ships, the sensitivity check, a refused head rep and pose doubt asking too: shown as sure ${part(sureSens)}; asked to confirm ${part(counted.filter(r => r.flagged || r.moved))}. `
+    + `With the open last rise asking too (card 039, David's #collecte phone only): shown as sure ${part(sureSens.filter(r => !r.tail))}; asked to confirm ${part(counted.filter(r => r.flagged || r.moved || r.tail))}.`;
+}

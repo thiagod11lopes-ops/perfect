@@ -1,0 +1,68 @@
+{
+  "$schema": "https://claude.ai/schemas/project-config.json",
+  "name": "neon-ophis",
+  "codename": "NEON_OPHIS_64",
+  "description": "NEON OPHIS — neon arcade snake (Greek ὄφις) in TypeScript + Canvas + Web Audio. Inspired by Mapping the Commodore 64.",
+  "language": "typescript",
+  "stack": {
+    "runtime": "browser",
+    "bundler": "vite",
+    "language": "typescript-strict",
+    "rendering": "canvas-2d",
+    "audio": "web-audio-api",
+    "framework": "none",
+    "dependencies": {
+      "runtime": [],
+      "dev": ["typescript", "vite", "terser"]
+    }
+  },
+  "scripts": {
+    "dev": "npm run dev",
+    "build": "npm run build",
+    "typecheck": "npm run typecheck",
+    "preview": "npm run preview"
+  },
+  "entry_points": {
+    "html": "index.html",
+    "main": "src/main.ts"
+  },
+  "doc_files": {
+    "spec": "CLAUDE.md",
+    "behavior": "SYSTEM_PROMPT.md",
+    "decisions": "DECISION_LOG.md",
+    "handoff": "HANDOFF.md",
+    "history": "HISTORY.md"
+  },
+  "context_files": [
+    ".claude/context/architecture.md",
+    ".claude/context/coding-standards.md",
+    ".claude/context/dependencies.md",
+    ".claude/context/domain-knowledge.md"
+  ],
+  "session": {
+    "load_order": [
+      "CLAUDE.md",
+      "SYSTEM_PROMPT.md",
+      "HANDOFF.md",
+      ".claude/context/architecture.md"
+    ],
+    "session_end_actions": [
+      "rewrite HANDOFF.md",
+      "append HISTORY.md",
+      "append DECISION_LOG.md if a non-obvious choice was made"
+    ]
+  },
+  "constraints": {
+    "bundle_max_kb_gzipped": 100,
+    "frame_budget_ms": 16.6,
+    "frame_target_ms": 8,
+    "static_assets_max_kb": 50,
+    "min_browser_target": "es2022",
+    "min_viewport": "360x640"
+  },
+  "conventions": {
+    "branch_strategy": "main-only-until-collab",
+    "commit_message_style": "imperative present (no body required)",
+    "language_for_docs": "english primary, pt-br welcome in rationale"
+  }
+}

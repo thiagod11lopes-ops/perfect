@@ -1,0 +1,358 @@
+import { useEffect, useRef, useState } from 'react';
+import { FITNESS_TESTS } from '../../lib/fitness-test-list';
+import { useT } from '../../lib/LanguageContext';
+import { CARD_ORDER, META } from './lift-meta';
+import { useSets, recentLifts } from './sets';
+import { isOffered } from '../../lib/offer';
+import { holdStage } from './stage-loop';
+import { TIERS, tierLabel, tierTag } from '../../lib/liftTiers';
+import { setName } from './set-name';
+import { ABOUT } from './about-copy';
+import { eventsConfigured, browserRefuses, countingOff, setCountingOff } from '../../lib/events';
+import { collectSwitchAtLoad, collectSwitchSeen, onCollectSwitch } from '../../lib/phoneCollect';
+import { COLLECT } from './collect-copy';
+import { onHomeScreen } from '../../lib/keep-sets';
+import { InstallRow } from './Install';
+import { pendingIncident, dismissIncident } from '../../lib/crashLog';
+import { CRASH, crashLine } from './crash-copy';
+import { showUnmeasuredRoutes } from '../../lib/buildFlags';
+import { unknownAddressAtLoad, unknownAddressSeen, onUnknownAddress } from '../../lib/useHashRouter';
+import './Choice.css';
+
+const PRO_ROW = {
+  fr: {
+    choiceRow: 'Espace pro',
+    choiceRowSub: 'Pour les coachs et les kinésithérapeutes',
+    programmeRow: 'Votre programme',
+    linkRow: 'J’ai un lien de mon coach',
+    linkRowSub: 'Collez-le pour ouvrir le programme',
+  },
+  en: {
+    choiceRow: 'Coach office',
+    choiceRowSub: 'For coaches and physiotherapists',
+    programmeRow: 'Your programme',
+    linkRow: 'I have a link from my coach',
+    linkRowSub: 'Paste it to open the programme',
+  },
+};
+
+// The catalogue and counted-exercise search live on #exercises (Guide.jsx) behind one "Trouver un exercice" row on
+// the home screen (Card 053, 16 November 2026).
+
+// A visit that opens on saved sets is a return: the choice greets it, as in the prototype.
+let returning = null;
+
+// On the rail, a card's figure is made only when the card comes within one rail's width of
+// the view, so opening the choice draws two or three figures, not all of them. Only the card in the
+// centre animates; the others keep their last frame, and a card that becomes the centre moves
+// on from the pose it kept.
+export function LiftCanvas({ lift, mode }) {
+  const canvas = useRef(null);
+  useEffect(() => {
+    const el = canvas.current;
+    if (!el) return undefined;
+    const rail = el.closest('.rail');
+    let scene = null, centred = false, unmounted = false;
+    let near = null, centre = null;
+
+    import('./lift-scenes').then(m => {
+      if (unmounted || !canvas.current) return;
+      const createLiftScene = m.createLiftScene;
+      if (!rail || typeof IntersectionObserver === 'undefined') {
+        scene = createLiftScene(el, lift, mode);
+        return;
+      }
+      near = new IntersectionObserver(entries => {
+        if (scene || !entries[entries.length - 1].isIntersecting) return;
+        scene = createLiftScene(el, lift, mode, { paused: true });
+        scene.setRunning(centred);
+        near.disconnect();
+      }, { root: rail, rootMargin: '0px 100%' });
+
+      centre = new IntersectionObserver(entries => {
+        centred = entries[entries.length - 1].intersectionRatio >= 0.6;
+        scene?.setRunning(centred);
+      }, { root: rail, threshold: [0, 0.6] });
+
+      near.observe(el);
+      centre.observe(el);
+    }).catch(() => {});
+
+    return () => {
+      unmounted = true;
+      near?.disconnect();
+      centre?.disconnect();
+      scene?.();
+    };
+  }, [lift, mode]);
+  return <canvas ref={canvas} aria-hidden="true" />;
+}
+
+// The dot of the centred card lights, and the stage holds still while the rail moves:
+// observers and a passive listener only, so a swipe reads no layout and renders nothing.
+function useRail(rail, dots) {
+  useEffect(() => {
+    const el = rail.current;
+    if (!el) return undefined;
+    let timer = 0;
+    const onScroll = () => { holdStage(true); clearTimeout(timer); timer = setTimeout(() => holdStage(false), 160); };
+    const onEnd = () => { clearTimeout(timer); holdStage(false); };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    el.addEventListener('scrollend', onEnd);
+    // Every card's visible share is kept; the dot goes to the most visible card, the one in the centre.
+    const ratios = new Map();
+    const io = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(entries => {
+      for (const e of entries) ratios.set(e.target, e.intersectionRatio);
+      let best = -1, top = 0;
+      [...el.children].forEach((c, i) => { const r = ratios.get(c) || 0; if (r > top) { top = r; best = i; } });
+      if (best >= 0) dots.current?.querySelectorAll('i').forEach((d, j) => d.classList.toggle('on', j === best));
+    }, { root: el, threshold: [0, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1] });
+    [...el.children].forEach(c => io?.observe(c));
+    return () => { el.removeEventListener('scroll', onScroll); el.removeEventListener('scrollend', onEnd); clearTimeout(timer); holdStage(false); io?.disconnect(); };
+  });
+}
+
+// A lift card is a plain button. No switch input covers it: on iOS Safari a native switch
+// takes horizontal drags for its thumb, so a swipe that began on a card never reached the rail.
+// iOS gives no haptic tick without that switch; navigator.vibrate ticks where it exists (Android).
+// The card is named by its exercise; its tier ("Expérimental : …") is read after the name, so VoiceOver says
+// what the label says on screen (R8; audit of 3 October).
+function LiftCard({ children, onClick, label, describedBy, cardRef }) {
+  return <button type="button" ref={cardRef} className="altar tactile" aria-label={label} aria-describedby={describedBy}
+    onClick={() => { navigator.vibrate?.(10); onClick(); }}>
+    {children}
+  </button>;
+}
+
+export default function Choice({ onChoose, onGuide, onHistory, onAbout, onPro, onProgramme, onManifesto, onEquine, onSports, onCoaches, onBuddies, onErgonomics, onReference, onChat, onUsage, held = null }) {
+  const { lang, tExercise } = useT(), fr = lang === 'fr';
+  const railRef = useRef(null), dotsRef = useRef(null), cards = useRef([]);
+  // The guide's names load after the choice; until then a set of an exercise without a card is not
+  // named, so the welcome never shows an internal key (review of 29 September).
+  const [nameOf, setNameOf] = useState(null);
+  useEffect(() => { import('./exercise-info').then(m => setNameOf(() => m.exerciseName), () => {}); }, []);
+  useRail(railRef, dotsRef);
+  // The programme a coach sent, once opened from its link (Programme.jsx): one row, first under the cards.
+  // held: a programme opened in this visit that the phone could not keep (App.jsx), the one opened last.
+  const [received, setReceived] = useState(() => (held ? { programme: held } : null));
+  useEffect(() => {
+    if (!onProgramme || held) return;
+    import('./programme-store').then(m => {
+      const list = m.loadReceived();
+      if (list?.[0]) setReceived(list[0]);
+    }).catch(() => {});
+  }, [onProgramme, held]);
+  const pro = PRO_ROW[fr ? 'fr' : 'en'];
+  // The chosen card carries the name the filming screen's frame takes, so it grows into it (View Transitions).
+  const choose = (lift, i) => { cards.current.forEach((c, j) => { if (c) c.style.viewTransitionName = j === i ? 'lift-hero' : ''; }); onChoose(lift); };
+  // Give storage a moment before showing the choice; late results still expose history.
+  const sets = useSets();
+  if (sets === undefined) return <div className="wv-experience" aria-busy="true" />;
+  if (returning === null && sets) returning = sets.length > 0;
+  const last = returning && sets?.[0];
+  const n = sets?.length || 0;
+  const lastKey = last && (last.exercise || last.exerciseKey);
+  // exerciseName gives the key back when it knows no name: a name is taken only when it differs from the key, as
+  // in the history (History.jsx), so a set of an earlier version is named by its locale name (third audit C25).
+  const lastRaw = last && setName({ key: lastKey, lang, meta: META, nameOf, tExercise });
+  const lastName = lastRaw && lastRaw.toLocaleLowerCase(fr ? 'fr-FR' : 'en-GB');
+  // The last lifts filmed, one tap each to their filming screen (WP1.5 of docs/SPEC-production.md): a lift the app no
+  // longer offers is left out. Named as the history names them; a lift whose name is not loaded yet waits for it.
+  const extraRows = (received ? 1 : 0) + (eventsConfigured() ? (browserRefuses() ? 1 : 2) : 0);
+  const maxRecents = Math.max(0, Math.min(2, 3 - extraRows));
+  const recents = sets?.length && maxRecents > 0 ? recentLifts(sets, maxRecents).filter(isOffered).map(key => ({ key, name: setName({ key, lang, meta: META, nameOf, tExercise }) })).filter(r => r.name) : [];
+  return <div className="wv-experience">
+    <section className={`screen is-active choose-screen${last ? ' has-welcome' : ''}`}>
+      <div className="choose-hero">
+      <div className="wrap">
+        <div className="topbar">
+          <span className="brand-sm">WorkoutVision</span>
+          <span className="offline-badge" aria-label={fr ? '100\u00A0% local' : '100% On-Device'}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+            <span>{fr ? '100\u00A0% local · La vidéo reste sur votre téléphone' : '100% On-Device · Video stays on your phone'}</span>
+          </span>
+          <span className="pill">{fr ? 'Version de test' : 'Test version'}</span>
+        </div>
+        <UnknownAddressNote fr={fr} />
+        <CrashNote fr={fr} />
+        {last && <div className="welcome">
+          <p className="welcome-l1">{fr ? 'Bon retour.' : 'Welcome back.'}</p>
+          {lastName && <p className="welcome-l2">{fr
+            ? `Dernière série\u00A0: ${lastName}, ${last.reps} ${last.reps > 1 ? 'répétitions' : 'répétition'}.`
+            : `Last set: ${lastName}, ${last.reps} ${last.reps === 1 ? 'rep' : 'reps'}.`}</p>}
+        </div>}
+        {/* Shown from the first saved set, welcome or not: a person back from "Changer d'exercice" finds them too. */}
+        {recents.length > 0 && <div className="recents" role="group" aria-label={fr ? 'Exercices récents' : 'Recent exercises'} data-testid="recents">
+          <span className="recents-label" aria-hidden="true">{fr ? 'Reprendre' : 'Recent'}</span>
+          {recents.map(r => <button key={r.key} type="button" className="recent press" onClick={() => { navigator.vibrate?.(10); onChoose(r.key); }}>{r.name}</button>)}
+        </div>}
+        <h1 className="title" data-reveal style={{ '--i': 0 }}>{fr ? 'Que travaillez-vous aujourd’hui\u00A0?' : 'What are you training today?'}</h1>
+        <p className="sub" data-reveal style={{ '--i': 1 }}>{fr ? 'Choisissez votre mouvement. Faites glisser pour les voir tous.' : 'Choose the movement you recognise. Swipe to see them all.'}</p>
+      </div>
+      <div className="rail" ref={railRef} data-reveal style={{ '--i': 2 }}>
+        {CARD_ORDER.map((lift, i) => <LiftCard key={lift} label={META[lift][lang]} describedBy={TIERS[lift] ? `tier-${lift}` : undefined} cardRef={el => { cards.current[i] = el; }} onClick={() => choose(lift, i)}>
+          <LiftCanvas lift={lift} />
+          <span className="altar-meta">
+            <span className="altar-name">{META[lift][lang]}</span>
+            {TIERS[lift] && <span id={`tier-${lift}`} className={`tier tier-${TIERS[lift]}`}>{tierLabel(TIERS[lift], fr)}</span>}
+            <span className="altar-alias">{META[lift][fr ? 'aliasFr' : 'aliasEn']}</span>
+          </span>
+        </LiftCard>)}
+      </div>
+      <div className="dots" ref={dotsRef} aria-hidden="true" data-reveal style={{ '--i': 3 }}>{CARD_ORDER.map((lift, i) => <i key={lift} className={i === 0 ? 'on' : ''} />)}</div>
+      </div>
+      <div className="wrap" data-reveal style={{ '--i': 4 }}>
+        {/* The home in three groups (David, 16 October 2026: "for me it just didn't make sense"): training, the
+            professionals' tools, then what is there to explore, the Manifesto last. */}
+        {<h2 className="section-head choose-head" data-testid="choose-head-training">{fr ? 'Votre entraînement' : 'Your training'}</h2>}
+        {/* The app on the Home Screen never receives a coach's link, which opens in the browser: a way to paste one in
+            (Programme.jsx, PasteLink; excellence hunt, 9 October 2026). */}
+        {!received && onProgramme && onHomeScreen() && <button className="row-link press" onClick={onProgramme} data-testid="choice-programme-link">
+          <span className="row-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1" /><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1" /></svg></span>
+          <span className="row-txt"><b>{pro.linkRow}</b><small>{pro.linkRowSub}</small></span>
+          <svg className="row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></svg>
+        </button>}
+        {received && <button className="row-link press" onClick={onProgramme} data-testid="choice-programme">
+          <span className="row-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6h10M9 12h10M9 18h10" /><path d="M4.5 6l.01 0M4.5 12l.01 0M4.5 18l.01 0" strokeWidth="2.4" /></svg></span>
+          <span className="row-txt"><b>{pro.programmeRow}</b><small>{received.programme.title}</small></span>
+          <svg className="row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></svg>
+        </button>}
+        <button className="row-link press" onClick={onGuide} data-testid="choice-find-exercise">
+          <span className="row-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg></span>
+          <span className="row-txt"><b>{fr ? 'Trouver un exercice' : 'Find an exercise'}</b><small>{fr ? 'Recherche, zones du corps et guide des mouvements' : 'Search, body areas and movement guide'}</small></span>
+          <svg className="row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></svg>
+        </button>
+        {/* Industrial Ergonomics & NIOSH */}
+        {showUnmeasuredRoutes() && onErgonomics && <button className="row-link press" onClick={onErgonomics} data-testid="choice-ergonomics">
+          <span className="row-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></svg></span>
+          <span className="row-txt"><b>{fr ? 'Calculateur NIOSH' : 'NIOSH calculator'}</b><small>{fr ? 'La charge limite d’une manutention, à partir de vos valeurs' : 'The weight limit of a lift, from your values'}</small></span>{/* HOME-1; French awaiting David's approval (R10) */}
+          <svg className="row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></svg>
+        </button>}
+        {/* Shown with no set too: after Safari erases the sets, or on a new phone, the history holds the restore
+            (audit of 2 October). */}
+        {Array.isArray(sets) && <button className="row-link press" onClick={onHistory}>
+          <span className="row-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M6 7v10M10 7v10M14 7v10M18 7v10" /></svg></span>
+          <span className="row-txt"><b>{fr ? 'Vos séries' : 'Your sets'}</b><small>{n === 0 ? (fr ? 'Restaurer une sauvegarde' : 'Restore a backup') : fr ? `${n} ${n > 1 ? 'séries' : 'série'} sur ce téléphone` : `${n} ${n === 1 ? 'set' : 'sets'} on this phone`}</small></span>
+          <svg className="row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></svg>
+        </button>}
+        {(onReference || onPro) && <h2 className="section-head choose-head" data-testid="choose-head-pro">{fr ? 'Pour les professionnels' : 'For professionals'}</h2>}
+        {/* The physiotherapist's workspace (15 October 2026, components/kine/; restored to Home per David's Task 3 order). */}
+        {onReference && <button className="row-link press" onClick={onReference} data-testid="choice-reference">
+          <span className="row-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="9" height="14" rx="2" /><rect x="13" y="5" width="9" height="14" rx="2" /><path d="M6.5 9v6M17.5 9l-2 6M17.5 9l2 6" /></svg></span>
+          <span className="row-txt"><b>{fr ? 'Espace kiné' : 'Physio workspace'}</b><small>{fr ? 'Vos exercices en vidéo, envoyés à vos patients en un lien' : 'Your exercises on video, sent to your patients in one link'}</small></span>
+          <svg className="row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></svg>
+        </button>}
+        {/* Espace pro (Pro.jsx): the coach's and the physiotherapist's programme builder, after the physio workspace. */}
+        {onPro && <button className="row-link press" onClick={onPro} data-testid="choice-pro">
+          <span className="row-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4.5V3h6v1.5" /><path d="M8.5 10h7M8.5 14h7M8.5 18h4" /></svg></span>
+          <span className="row-txt"><b>{pro.choiceRow}</b><small>{pro.choiceRowSub}</small></span>
+          <svg className="row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></svg>
+        </button>}
+        {/* What measures nothing yet is offered only by a build with the extended routes (METHOD.md, lab lane; card 008,
+            11 November 2026): a newcomer meets nothing the app cannot do. */}
+        {showUnmeasuredRoutes() && (onEquine || onSports || onCoaches || onBuddies) && <h2 className="section-head choose-head" data-testid="choose-head-explore">{fr ? 'En préparation et nouvelles disciplines' : 'Roadmap & New Disciplines'}</h2>}
+        {/* EquiVision: horse locomotion and gait biomechanics roadmap */}
+        {showUnmeasuredRoutes() && onEquine && <button className="row-link press" onClick={onEquine} data-testid="choice-equine">
+          <span className="row-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12c2.2-6 4.4-6 6.6 0s4.4 6 6.6 0 4.4-6 6.6 0" /></svg></span>
+          <span className="row-txt"><span className="row-head"><b>{fr ? 'EquiVision\u00A0: biomécanique équine' : 'EquiVision: Equine Biomechanics'}</b><span className="tag tier-tag tier-roadmap">{fr ? 'En préparation' : 'Roadmap R&D'}</span></span><small>{fr ? 'Modélisation du trot, symétrie de la foulée et examen locomoteur' : 'Trot modeling, stride symmetry, and locomotor analysis'}</small></span>
+          <svg className="row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></svg>
+        </button>}
+        {/* Multi-Sports Lab: markerless motion capture roadmap for golf, tennis, rowing... */}
+        {showUnmeasuredRoutes() && onSports && <button className="row-link press" onClick={onSports} data-testid="choice-sports">
+          <span className="row-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" /></svg></span>
+          <span className="row-txt"><span className="row-head"><b>{fr ? 'Atelier multisport' : 'Multi-Sports Lab'}</b><span className="tag tier-tag tier-roadmap">{fr ? 'En préparation' : 'Roadmap R&D'}</span></span><small>{fr ? 'Golf, tennis, aviron\u00A0: cinématique sans capteur et cadence' : 'Golf, tennis, rowing: markerless kinematics and cadence'}</small></span>
+          <svg className="row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></svg>
+        </button>}
+        {/* Coach & Physio Matcher */}
+        {showUnmeasuredRoutes() && onCoaches && <button className="row-link press" onClick={onCoaches} data-testid="choice-coaches">
+          <span className="row-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M6 20v-2a6 6 0 0 1 12 0v2" /></svg></span>
+          <span className="row-txt"><b>{fr ? 'Trouver un coach (démo)' : 'Find a coach (demo)'}</b><small>{fr ? 'Des profils fictifs\u00A0: l’annuaire est en préparation' : 'Fictional profiles: the directory is being prepared'}</small></span>{/* HOME-1, 14 October 2026; French awaiting David's approval (R10) */}
+          <svg className="row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></svg>
+        </button>}
+        {/* Gym Buddy Matcher */}
+        {showUnmeasuredRoutes() && onBuddies && <button className="row-link press" onClick={onBuddies} data-testid="choice-buddies">
+          <span className="row-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg></span>
+          <span className="row-txt"><b>{fr ? 'Partenaires de salle (démo)' : 'Gym partners (demo)'}</b><small>{fr ? 'Des profils fictifs, pour comparer vos charges' : 'Fictional profiles, to compare your working weights'}</small></span>{/* HOME-1; French awaiting David's approval (R10) */}
+          <svg className="row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></svg>
+        </button>}
+        <UsageNote fr={fr} onUsage={onUsage} />
+        <CollectSwitched fr={fr} />
+        {/* Installing the app (Install.jsx): a quiet row at the foot of the home, never once the app is installed. */}
+        <InstallRow fr={fr} />
+        <p className="foot">{fr ? 'Analyse biomécanique par vision par ordinateur, traitée localement sur votre téléphone.' : 'Computer vision biomechanical analysis, processed locally on your phone.'}</p>
+        {/* One foot row (Card 053): 30-second fitness tests (with their Experimental tag), Manifesto, and About. */}
+        <div className="choice-foot-links" data-testid="choice-foot-links">
+          {['chair_stand_test', 'arm_curl_test'].map(key => <button key={key} type="button" className="about-link foot-test-link press" onClick={() => onChoose(key)} data-testid={`choose-${key}`}>
+            <span>{FITNESS_TESTS[key][fr ? 'fr' : 'en']}</span>
+            <span className="tag tier-tag tier-experimental" data-testid={`tier-${key}`}>{tierTag('experimental', fr)}</span>
+          </button>)}
+          {onManifesto && <button type="button" className="about-link press" onClick={onManifesto} data-testid="choice-manifesto">{fr ? 'Manifeste' : 'Manifesto'}</button>}
+          {onAbout && <button type="button" className="about-link press" onClick={onAbout} data-testid="about-link">{ABOUT[fr ? 'fr' : 'en'].link}</button>}
+          {onUsage && eventsConfigured() && browserRefuses() && <button type="button" className="about-link press" onClick={onUsage} data-testid="usage-link">{fr ? 'Mesure d’audience' : 'Usage counts'}</button>}
+          {showUnmeasuredRoutes() && onChat && <button type="button" className="about-link press" onClick={onChat} data-testid="chat-link">{fr ? 'Messagerie (démo)' : 'Messaging (demo)'}</button>}
+        </div>
+      </div>
+    </section>
+  </div>;
+}
+
+// What the app sends about its use, where the build sends it (src/lib/events.js), and the way to stop it on this
+// phone. A browser that asks sites not to track sends nothing, and is not asked. Approved by David on 9 October 2026
+// (test/real-phone/swarm/copy-analytics.md).
+function UsageNote({ fr, onUsage }) {
+  const [off, setOff] = useState(countingOff);
+  if (!eventsConfigured() || browserRefuses()) return null;
+  const toggle = () => { setCountingOff(!off); setOff(!off); };
+  return <div className="foot usage-note" data-testid="usage-note">
+    <p role="status">{off
+      ? (fr ? 'Mesure d’audience désactivée sur ce téléphone.' : 'Usage counts are off on this phone.')
+      : (fr ? 'Pour s’améliorer, l’appli mesure l’usage de ses écrans et de ses analyses, avec un identifiant tiré au hasard sur ce téléphone\u00A0: ni nom, ni vidéo, ni mouvement.' : 'To improve, the app measures how its screens and analyses are used, with an id drawn at random on this phone: no name, no video, no movement data.')}</p>
+    <div className="usage-keys">
+      <button type="button" className="text-btn press" onClick={toggle}
+        aria-label={off ? (fr ? 'Réactiver la mesure d’audience' : 'Turn usage counts back on') : (fr ? 'Désactiver la mesure d’audience' : 'Turn off usage counts')}>
+        {off ? (fr ? 'Réactiver' : 'Turn on') : (fr ? 'Désactiver' : 'Turn off')}
+      </button>
+      {/* What is counted, where it goes (UsageNotice.jsx; PRIV-3). */}
+      {onUsage && <button type="button" className="text-btn press" onClick={onUsage} data-testid="usage-more">{fr ? 'Ce qui est compté' : 'What is counted'}</button>}
+    </div>
+  </div>;
+}
+
+// One line after the app restarted during a session that did not end cleanly (crashLog.js): where it was, and its
+// detail to copy for David, kept on the phone until dismissed. Nothing shows without an incident.
+function CrashNote({ fr }) {
+  const [incident, setIncident] = useState(pendingIncident);
+  const [copied, setCopied] = useState(null);
+  if (!incident) return null;
+  const c = CRASH[fr ? 'fr' : 'en'];
+  const copy = () => {
+    const text = JSON.stringify(incident, null, 2);
+    Promise.resolve().then(() => navigator.clipboard.writeText(text)).then(() => setCopied('ok'), () => setCopied('failed'));
+  };
+  const dismiss = () => { dismissIncident(); setIncident(null); };
+  return <div className="foot usage-note crash-note" data-testid="crash-note">
+    <p role="status">{copied === 'ok' ? `${crashLine(incident, fr)} ${c.copied}` : copied === 'failed' ? `${crashLine(incident, fr)} ${c.copyFailed}` : crashLine(incident, fr)}</p>
+    <div className="crash-keys">
+      <button type="button" className="text-btn press" onClick={copy} data-testid="crash-copy">{c.copy}</button>
+      <button type="button" className="text-btn press" onClick={dismiss} aria-label={c.dismissLabel} data-testid="crash-dismiss">{c.dismiss}</button>
+    </div>
+  </div>;
+}
+
+// One line after the app was opened at an unknown address (#nimporte-quoi; Card 050), on that visit to the choice only.
+function UnknownAddressNote({ fr }) {
+  const [shown, setShown] = useState(unknownAddressAtLoad);
+  useEffect(() => { if (shown) unknownAddressSeen(); }, [shown]);
+  useEffect(() => onUnknownAddress(setShown), []);
+  if (!shown) return null;
+  return <p className="foot" role="status" data-testid="unknown-address">{fr ? 'Cette page n’existe pas.' : 'This page does not exist.'}</p>;
+}
+
+// One line after the app was opened at #collecte or #collecte-off (phoneCollect.js), on that visit to the choice only.
+function CollectSwitched({ fr }) {
+  const [state, setState] = useState(collectSwitchAtLoad);
+  useEffect(() => { if (state) collectSwitchSeen(); }, [state]);
+  useEffect(() => onCollectSwitch(setState), []);
+  if (!state) return null;
+  return <p className="foot" role="status" data-testid="collect-switched">{COLLECT[fr ? 'fr' : 'en'][state]}</p>;
+}

@@ -1,0 +1,65 @@
+// Lift tiers (28 September 2026): nine lifts on offer, each labelled Beta or
+// Experimental on its card, on the filming screen and in the guide. Since 3 October the tiers follow
+// David's labelled sets and field checks (test/real-phone/accuracy/tiers.test.ts): five Beta, four Experimental
+// (lateral raise, bench press, hip thrust until verified at 12 on iPhone, overhead press); Beta cards come first.
+import { test, expect } from '@playwright/test';
+
+if (process.env.PW_CHROMIUM) test.use({ launchOptions: { executablePath: process.env.PW_CHROMIUM } });
+test.use({ viewport: { width: 390, height: 664 }, serviceWorkers: 'block' });
+
+const EXP_EN = 'Experimental: we are still learning this exercise', EXP_FR = 'Expérimental\u00A0: nous\u00A0apprenons encore à le compter';
+
+for (const [lang, beta, exp, squat, bench, whole, ohp, front, frontStep, armFrame, lateral] of [
+  ['en', 'Beta', EXP_EN, 'Squat', 'Bench press', 'Your whole body in the frame, feet included.', 'Overhead press', 'Filmed from the front', 'Stand the phone upright, facing you.', 'At least head to hips in the frame, hands included.', 'Lateral raise'],
+  ['fr', 'Bêta', EXP_FR, 'Squat', 'Développé couché', 'Le corps entier dans le cadre, pieds compris.', 'Développé militaire', 'Filmé de face', 'Posez le téléphone face à vous, à la verticale.', 'Au moins de la tête aux hanches dans le cadre, mains comprises.', 'Élévations latérales'],
+]) {
+  test(`tiers on the cards, the filming screen and the guide (${lang})`, async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+    // Choosing a lift prefetches the pose model; no analysis runs here, and a fresh test context
+    // cannot cache the 9 MB file (net::ERR_CACHE_WRITE_FAILURE), so it is answered empty.
+    await page.route('**/pose_landmarker_full.task', r => r.fulfill({ status: 200, body: '' }));
+    await page.addInitScript(l => { localStorage.setItem('wv_seen_entry', 'true'); localStorage.setItem('wv_lang', l); }, lang);
+    await page.goto('/workout-vision/');
+    await expect(page.locator('.altar')).toHaveCount(9, { timeout: 20000 });
+    await expect(page.locator('.altar .tier-beta')).toHaveCount(5);
+    await expect(page.locator('.altar .tier-experimental')).toHaveCount(4);
+    // Beta first (David, 3 October): the five Beta cards lead the rail, then the four Experimental ones (hip thrust
+    // returned to experimental per #190 Task 7 until iPhone counts 12).
+    const order = await page.$$eval('.rail > .altar .tier', els => els.map(e => e.classList.contains('tier-beta') ? 'beta' : 'experimental'));
+    expect(order).toEqual([...Array(5).fill('beta'), ...Array(4).fill('experimental')]);
+    await expect(page.locator('.altar', { hasText: 'Hip thrust' }).locator('.tier')).toHaveText(exp);
+    await page.locator('.altar', { hasText: 'Hip thrust' }).click();
+    await expect(page.locator('.film-screen .tier')).toHaveText(exp, { timeout: 20000 });
+    await page.goBack();
+    await expect(page.locator('.rail > .altar').first()).toHaveAttribute('aria-describedby', 'tier-bicep_curl');
+    // The lateral raise, Experimental since 3 October: its card and its filming screen say so in full.
+    await expect(page.locator('.altar', { hasText: lateral }).locator('.tier')).toHaveText(exp);
+    await page.locator('.altar', { hasText: lateral }).click();
+    await expect(page.locator('.film-screen .tier')).toHaveText(exp, { timeout: 20000 });
+    await page.goBack();
+    await expect(page.locator('.altar', { hasText: squat }).first().locator('.tier')).toHaveText(beta);
+    await expect(page.locator('.altar', { hasText: bench }).locator('.tier')).toHaveText(exp);
+    await page.locator('.altar', { hasText: bench }).click();
+    await expect(page.locator('.film-screen .tier')).toHaveText(exp, { timeout: 20000 });
+    await page.goBack();
+    await page.locator('.altar', { hasText: squat }).first().click();
+    await expect(page.getByText(whole, { exact: true })).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('.film-screen .tier')).toHaveText(beta);
+    // Overhead press: Experimental, filmed from the front, with the front-view instruction.
+    await page.goBack();
+    await page.locator('.altar', { hasText: ohp }).click();
+    await expect(page.locator('.film-screen .tier')).toHaveText(exp, { timeout: 20000 });
+    await expect(page.locator('.film-screen')).toContainText(front);
+    await expect(page.getByText(frontStep, { exact: true })).toBeVisible();
+    // An arm lift's framing is stated as the least the count needs: the figure shows the reference set's wider frame.
+    await expect(page.getByText(armFrame, { exact: true })).toBeVisible();
+    await page.goto('/workout-vision/#exercises');
+    await expect(page.locator('[data-exercise="bench_press"] .tag')).toHaveText(lang === 'fr' ? 'Expérimental' : 'Experimental', { timeout: 20000 });
+    await expect(page.locator('[data-exercise="squat"] .tag')).toHaveText(beta);
+    await expect(page.locator('[data-exercise="lateral_raise"] .tag')).toHaveText(lang === 'fr' ? 'Expérimental' : 'Experimental');
+    await expect(page.locator('[data-exercise="overhead_press"] .tag')).toHaveText(lang === 'fr' ? 'Expérimental' : 'Experimental');
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+}

@@ -1,0 +1,431 @@
+name: CI
+
+on:
+  push:
+    branches: [main, counter-core]
+  pull_request:
+    branches: [main, counter-core]
+
+# The jobs read the code and upload their artifacts; the token can do nothing else (audit of 3 October).
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  quality:
+    name: Lint, typecheck, tests and production build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      # Counting gate (PLAN.md, David's order of 6 November 2026, point 9): a pull request that changes any file under
+      # src/lib/counting/ must also change TRIED.md, compared against the base branch.
+      - name: Counting changes must update TRIED.md
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --depth=1 origin "$GITHUB_BASE_REF"
+          changed=$(git diff --name-only FETCH_HEAD HEAD)
+          if echo "$changed" | grep -q '^src/lib/counting/'; then
+            if ! echo "$changed" | grep -qx 'TRIED.md'; then
+              echo "::error::Pull request changes files under src/lib/counting/ without updating TRIED.md (PLAN.md, David's order of 6 November 2026)."
+              exit 1
+            fi
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # The data rules of PLAN.md's amendment of 15 November 2026 (THE DATA; scripts/check-data-discipline.mjs): a pull
+      # request that changes src/lib/counting/ names in TRIED.md the data it was chosen on and other data it was confirmed
+      # on; on every run, no code file outside the exam's allowlist names the sealed folder of David's sets (PLAN.md).
+      - name: Data discipline
+        run: |
+          if [ -n "$GITHUB_BASE_REF" ]; then
+            git fetch --depth=1 origin "$GITHUB_BASE_REF"
+            node scripts/check-data-discipline.mjs --base FETCH_HEAD
+          else
+            node scripts/check-data-discipline.mjs
+          fi
+      # The freeze of the same amendment: the files the built pages do not reach may not outnumber the base branch's
+      # count (scripts/reach-baseline.json, read from the base; the head's own file only when the base has none yet).
+      - name: No new unreached code
+        run: |
+          if [ -n "$GITHUB_BASE_REF" ]; then git fetch --depth=1 origin "$GITHUB_BASE_REF"; base=FETCH_HEAD; else base=HEAD^1; fi
+          max=$(git show "$base:scripts/reach-baseline.json" 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).unreached)}catch{console.log("")}})')
+          if [ -z "$max" ]; then max=$(node -p 'require("./scripts/reach-baseline.json").unreached'); fi
+          node scripts/audit-reach.mjs --max "$max"
+      - run: npm ci
+      # Labelled sets lock (CLAUDE.md R1), against the base the pull request's merge commit was made on
+      # (pull_request.base.sha) and the branch's previous tip on a push (github.event.before; a new branch falls back to HEAD^1):
+      # 1. a labelled set file that changes changes test/real-phone/labels.lock with it (David's order of 6 November
+      #    2026, Phase 3);
+      # 2. no line of the base's labels.lock changes or goes without a ruling of David's recorded in
+      #    test/real-phone/label-rulings.json (the same order, Phase 6; scripts/check-labels-lock.mjs);
+      # 3. the lock holds every labelled set on disk, its SHA-256 and its label (labels-lock.test.ts).
+      - name: Verify labelled sets lock (test/real-phone/labels.lock)
+        env:
+          BEFORE: ${{ github.event.before }}
+          # The base the pull request's merge commit was made on, not the base branch's tip when the job runs: a merge to
+          # the base in between must not read as lines this change removed (review of 8 November 2026).
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then git fetch --depth=1 origin "$BASE_SHA"; base=FETCH_HEAD
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then git fetch --depth=1 origin "$BEFORE"; base=FETCH_HEAD
+          else base=HEAD^1; fi
+          changed=$(git diff --name-only --no-renames "$base" HEAD)
+          if echo "$changed" | grep -Eq '^test/real-phone/(sets-|landmarks/|blind/|public/).*\.json\.gz$'; then
+            if ! echo "$changed" | grep -qx 'test/real-phone/labels.lock'; then
+              echo "::error::Labelled set file changed without updating test/real-phone/labels.lock (CLAUDE.md R1)."
+              exit 1
+            fi
+          fi
+          if git cat-file -e "$base:test/real-phone/labels.lock" 2>/dev/null; then
+            git show "$base:test/real-phone/labels.lock" > "$RUNNER_TEMP/labels.lock.base"
+          fi
+          node scripts/check-labels-lock.mjs "$RUNNER_TEMP/labels.lock.base" test/real-phone/labels.lock test/real-phone/label-rulings.json
+          npx vitest run --no-cache test/real-phone/accuracy/labels-lock.test.ts
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run check:css-tokens
+      - run: npm test
+      # The counting gates compare with the baselines the base branch holds, not those of the change itself, so a
+      # change cannot pass by editing them (audit of 3 October). On a pull request, the base branch's tip. On a push,
+      # the branch's previous tip (github.event.before, fetched explicitly), not HEAD^1: a push of several commits is
+      # compared with what the branch held before it, so an earlier commit of the push that lowered the baselines
+      # cannot set the bar for the tip (third audit, C28, 3 October). A new branch has no previous tip (all zeros) and
+      # falls back to HEAD^1. Bench press and overhead press sets are measured in both scoreboards and decide nothing
+      # (PLAN.md; third audit, C37).
+      - name: Baselines of the base branch
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -n "$GITHUB_BASE_REF" ]; then git fetch --depth=1 origin "$GITHUB_BASE_REF"; base=FETCH_HEAD
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then git fetch --depth=1 origin "$BEFORE"; base=FETCH_HEAD
+          else base=HEAD^1; fi
+          mkdir -p "$RUNNER_TEMP/base"
+          for f in test/real-phone/accuracy/scoreboard-baseline.json test/real-phone/accuracy/public-baseline.json test/real-phone/synth/synth.txt; do
+            if git show "$base:$f" > "$RUNNER_TEMP/base/$(basename "$f")" 2>/dev/null; then :; else rm -f "$RUNNER_TEMP/base/$(basename "$f")"; fi
+          done
+      # R2: the counting regression gate on David's labelled sets. Fails when the exact count falls, any set is off
+      # by 3 or more or newly refused, or the committed baseline does not hold the live counts, so the next change is
+      # compared with what the code really counts (test/real-phone/accuracy/scoreboard.test.ts; third audit, C27, C31).
+      # So a commit that adds a labelled set, or moves a count, also commits the baselines it gives:
+      # SCOREBOARD_UPDATE=1 npm run scoreboard and SCOREBOARD_UPDATE=1 npm run scoreboard:public.
+      - run: SCOREBOARD_BASE="$RUNNER_TEMP/base/scoreboard-baseline.json" npm run scoreboard
+      # Blind counts, David's and the testers' (David's order of 6 November 2026, Phase 6), set by set against the same
+      # base baseline (blindCounts, testerBlindCounts): fails when one set's error grows, a set that gave a count is
+      # refused, a set becomes off by 3 or more, a set leaves, or a file breaks the schema
+      # (test/real-phone/accuracy/scoreboard-blind.test.ts; test/real-phone/blind/compare.mjs, parse.mjs).
+      - run: SCOREBOARD_BASE="$RUNNER_TEMP/base/scoreboard-baseline.json" npm run scoreboard:blind
+      # The 894 public build sets (Countix): the same rule, the committed baseline included (public-scoreboard.test.ts);
+      # its 76 bench press sets are shown and kept in the baseline, and decide nothing (PLAN.md).
+      - run: PUBLIC_BASE="$RUNNER_TEMP/base/public-baseline.json" npm run scoreboard:public
+      # The 96 synthetic sets (test/real-phone/synth/sets, rendered by run.mjs): the count may not lose an exact
+      # set, and the range and phase errors may not grow (audit FINDING-021).
+      - run: SYNTH_BASE="$RUNNER_TEMP/base/synth.txt" SYNTH_DIR=test/real-phone/synth/sets npx vitest run --no-cache test/real-phone/synth/analyse.test.ts
+      - run: git diff --exit-code test/real-phone/synth/synth.txt
+      - run: npm run build
+      - run: npm run check:entry-budget
+      - name: Check production dist has no events URL (D6)
+        run: node scripts/check-dist-events.mjs dist
+      # Card 049: no chunk of a route switched off in production, no Blob upload client, no lookup origin in the policy.
+      - name: Production dist ships only what its pages use (card 049)
+        run: node scripts/check-ship-less.mjs dist
+      - name: Check build with events URL sets connect-src and notice host across all pages (Task 12, PRIV-3)
+        env:
+          VITE_EVENTS_URL: https://events.invalid/event
+          EVENTS_URL_VAR: https://events.invalid/event
+        run: |
+          trap 'rm -rf dist-events' EXIT
+          npx vite build --outDir dist-events --emptyOutDir
+          node scripts/check-dist-events.mjs dist-events
+
+  e2e-shard:
+    name: Browser tests (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright --version
+      # The system packages Playwright needs (185, 139 MB on ubuntu-26.04) kept between runs: on 18 November 2026 the
+      # runners' mirror served them at about 50 KB/s (log 134732085350: 3.7 MB in 74 s), about 45 minutes a job.
+      - name: Restore the cached system packages for Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ci-apt-archives
+          key: apt-playwright-chromium-webkit-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: apt-playwright-chromium-webkit-${{ runner.os }}-
+      # The Playwright browser binaries kept between runs, keyed on package-lock.json: on 19 November 2026 run
+      # 44521852387 failed four times in the install step, so a run that restores them skips the browser download.
+      # Not verified until the next run shows a cache hit in its log.
+      - name: Restore the cached Playwright browser binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: ms-playwright-${{ runner.os }}-
+      - name: Install Playwright browsers and dependencies
+        run: |
+          installed=0
+          # An attempt killed mid-install left its apt-get running and holding the dpkg lock, and the unbounded lock wait
+          # then ran out the job's time (18 November 2026, log 134689964138: 213 waits over about 10 minutes). So apt keeps
+          # what it downloads (the cache above holds it for the next run, and a retried attempt resumes from it), gives up a
+          # stalled download after 20 s and retries, each attempt has 10 minutes, the lock wait is bounded (about 3
+          # minutes), and a failed attempt's leftover apt-get or dpkg is stopped and dpkg repaired before the next.
+          printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "3";\nAPT::Keep-Downloaded-Packages "true";\nBinary::apt::APT::Keep-Downloaded-Packages "true";\n' | sudo tee /etc/apt/apt.conf.d/99ci-apt >/dev/null
+          sudo rm -f /etc/apt/apt.conf.d/docker-clean
+          if [ -d ~/.cache/ci-apt-archives ]; then sudo cp ~/.cache/ci-apt-archives/*.deb /var/cache/apt/archives/ 2>/dev/null || true; fi
+          for attempt in 1 2 3 4; do
+            for wait in $(seq 60); do
+              sudo fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1 || break
+              echo "Waiting for apt/dpkg lock ($wait/60)..."
+              sleep 3
+            done
+            if timeout -k 10 600 npx playwright install --with-deps chromium webkit; then
+              installed=1
+              break
+            fi
+            echo "Playwright install attempt $attempt failed; stopping leftover apt/dpkg and retrying in 15s..."
+            sudo pkill -x apt-get || true
+            sudo pkill -x apt || true
+            sudo pkill -x dpkg || true
+            sleep 5
+            sudo dpkg --configure -a || true
+            sleep 15
+          done
+          mkdir -p ~/.cache/ci-apt-archives
+          cp /var/cache/apt/archives/*.deb ~/.cache/ci-apt-archives/ 2>/dev/null || true
+          if [ "$installed" -ne 1 ]; then
+            echo "Failed to install Playwright browsers after 4 attempts"
+            exit 1
+          fi
+      # Live counting and contributions are off in production (src/lib/buildFlags.js; deploy.yml leaves VITE_LIVE and
+      # VITE_CONTRIBUTE unset): this build switches both on, so their tests still run (live.spec.js, contribute*.spec.js).
+      # The production build itself is built and tested by playwright.config.js on port 4176 (e2e/build-flags.spec.js).
+      - run: npm run build:e2e
+      # One worker per shard, as the timing checks of the touch tests were measured. 1 retry in CI to heal transient WebKit IPC hiccups.
+      - name: Browser tests (production build, shard ${{ matrix.shard }}/4)
+        run: npx playwright test --project=core --retries=1 --workers=1 --shard=${{ matrix.shard }}/4
+      # A failed test leaves its page snapshot (error-context.md) and screenshots in test-results/: kept for five days, so
+      # a failure that does not come back on a re-run can still be read (e2e/pack.spec.js, 18 October 2026).
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results-${{ github.sha }}-shard-${{ matrix.shard }}
+          path: |
+            test-results/
+            test-results-extended/
+          retention-days: 5
+
+  # Keeps the exact required check context name ("Browser tests (Chromium and WebKit)") for main branch protection.
+  e2e:
+    name: Browser tests (Chromium and WebKit)
+    needs: [e2e-shard]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all browser test shards succeeded
+        run: |
+          if [ "${{ needs.e2e-shard.result }}" != "success" ]; then
+            echo "Browser test shards failed (result=${{ needs.e2e-shard.result }})."
+            exit 1
+          fi
+
+  # The tour (PLAN.md, GROWTH, after step 1): every screen reached without a video, on the production
+  # build, in WebKit with the iPhone profile, at 390x664, 390x745 and 375x548, and at 390x664 with
+  # Reduce Motion and with the light appearance. Its own checks fail the job; its shots and each
+  # setting's results.json (with the srcHash) are kept as the run's artifacts for five days, and the
+  # results are printed in the log. The screens that need David's clips run on the Mac.
+  tour:
+    name: Tour (WebKit, iPhone profile, three sizes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The system packages Playwright needs (185, 139 MB on ubuntu-26.04) kept between runs: on 18 November 2026 the
+      # runners' mirror served them at about 50 KB/s (log 134732085350: 3.7 MB in 74 s), about 45 minutes a job.
+      - name: Restore the cached system packages for Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ci-apt-archives
+          key: apt-playwright-webkit-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: apt-playwright-webkit-${{ runner.os }}-
+      - name: Install Playwright WebKit and dependencies
+        run: |
+          installed=0
+          # An attempt killed mid-install left its apt-get running and holding the dpkg lock, and the unbounded lock wait
+          # then ran out the job's time (18 November 2026, log 134689964138: 213 waits over about 10 minutes). So apt keeps
+          # what it downloads (the cache above holds it for the next run, and a retried attempt resumes from it), gives up a
+          # stalled download after 20 s and retries, each attempt has 10 minutes, the lock wait is bounded (about 3
+          # minutes), and a failed attempt's leftover apt-get or dpkg is stopped and dpkg repaired before the next.
+          printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "3";\nAPT::Keep-Downloaded-Packages "true";\nBinary::apt::APT::Keep-Downloaded-Packages "true";\n' | sudo tee /etc/apt/apt.conf.d/99ci-apt >/dev/null
+          sudo rm -f /etc/apt/apt.conf.d/docker-clean
+          if [ -d ~/.cache/ci-apt-archives ]; then sudo cp ~/.cache/ci-apt-archives/*.deb /var/cache/apt/archives/ 2>/dev/null || true; fi
+          for attempt in 1 2 3 4; do
+            for wait in $(seq 60); do
+              sudo fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1 || break
+              echo "Waiting for apt/dpkg lock ($wait/60)..."
+              sleep 3
+            done
+            if timeout -k 10 600 npx playwright install --with-deps webkit; then
+              installed=1
+              break
+            fi
+            echo "Playwright install attempt $attempt failed; stopping leftover apt/dpkg and retrying in 15s..."
+            sudo pkill -x apt-get || true
+            sudo pkill -x apt || true
+            sudo pkill -x dpkg || true
+            sleep 5
+            sudo dpkg --configure -a || true
+            sleep 15
+          done
+          mkdir -p ~/.cache/ci-apt-archives
+          cp /var/cache/apt/archives/*.deb ~/.cache/ci-apt-archives/ 2>/dev/null || true
+          if [ "$installed" -ne 1 ]; then
+            echo "Failed to install Playwright WebKit after 4 attempts"
+            exit 1
+          fi
+      - run: npm run build
+      - name: Serve the production build
+        run: |
+          npx vite preview --port 4175 --strictPort &
+          npx --yes wait-on@8 http://127.0.0.1:4175/workout-vision/ --timeout 60000
+      - name: Run the tour at every setting
+        run: |
+          status=0
+          for cfg in "390 664 0 dark" "390 745 0 dark" "375 548 0 dark" "390 664 1 dark" "390 664 0 light"; do
+            set -- $cfg
+            dir="test/real-phone/tour-ci/$1x$2"
+            if [ "$3" = 1 ]; then dir="$dir-reduce"; fi
+            if [ "$4" = light ]; then dir="$dir-light"; fi
+            WV_W=$1 WV_H=$2 WV_REDUCED=$3 WV_SCHEME=$4 WV_DIR="$dir" node test/real-phone/tour-ci/tour.mjs || status=1
+          done
+          exit $status
+      - name: Keep "Filmer ma série" in view for every exercise
+        if: always()
+        # The two gated heights only: 548 px is recorded by a local run, never gated (David, 29 September: weigh every run's cost).
+        run: WV_SIZES=390x664,390x745 node test/real-phone/tour-ci/film-button.mjs
+      # The notice of the anonymous usage counts (UsageNotice.jsx; WP2.3), on a build that names an events server the
+      # script answers itself (.invalid never resolves), at the three sizes, in French and English, with the same checks.
+      - name: The notice of the usage counts at the three sizes
+        if: always()
+        run: |
+          VITE_EVENTS_URL=https://events.invalid/event npx vite build --outDir dist-events --emptyOutDir
+          npx vite preview --outDir dist-events --port 4177 --strictPort &
+          npx --yes wait-on@8 http://127.0.0.1:4177/workout-vision/ --timeout 60000
+          node test/real-phone/tour-ci/usage-notice.mjs
+      - name: Keep the shots and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tour-${{ github.sha }}
+          path: |
+            test/real-phone/tour-ci/*/
+            test/real-phone/tour-ci/film-button-after.txt
+          retention-days: 5
+
+  # The journey (test/real-phone/synth/smoke.mjs, STRICT): the production app driven end to end, in Chromium
+  # with the iPhone profile, by synthetic sets whose count is known exactly (test/real-phone/synth/README.md):
+  # the card, the film screen, the video, the analysis, the result, a correction typed or the count accepted,
+  # the replay, the report and the history. It fails when the count differs from the video's truth, a screen
+  # is not reached, the correction is not the count saved, or any fault is seen beyond the two known aborted
+  # requests. The videos are rendered once and kept in the cache, keyed on the renderer and the body model;
+  # no video is committed. The body model is three.js r170's Michelle.glb (MIT), checked by its SHA-256.
+  journey:
+    name: Journey (synthetic sets, production build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SETS: ${{ github.workspace }}/.journey-sets
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright Chromium and dependencies
+        run: |
+          installed=0
+          for attempt in 1 2 3 4; do
+            while sudo fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1; do
+              echo "Waiting for apt/dpkg lock..."
+              sleep 3
+            done
+            if timeout 240 npx playwright install --with-deps chromium; then
+              installed=1
+              break
+            fi
+            echo "Playwright install attempt $attempt failed; waiting 15s for system updates..."
+            sleep 15
+          done
+          if [ "$installed" -ne 1 ]; then
+            echo "Failed to install Playwright Chromium after 4 attempts"
+            exit 1
+          fi
+      # The lateral raise's journey keeps a contribution (CONTRIBUTE=1, below): contributions, paused in production
+      # (src/lib/buildFlags.js, WP0.4), are switched on for this build so that path stays tested.
+      - run: VITE_CONTRIBUTE=1 npm run build
+      # Restored and saved as two steps, so a render survives a journey that fails; the key holds the renderer,
+      # its parameters (this file) and the locked versions of three.js and Chromium (package-lock.json).
+      - name: Restore the rendered sets
+        id: sets
+        uses: actions/cache/restore@v4
+        with:
+          path: .journey-sets
+          key: journey-sets-${{ hashFiles('test/real-phone/synth/synth.js', 'test/real-phone/synth/synth.html', 'test/real-phone/synth/run-video.mjs', '.github/workflows/ci.yml', 'package-lock.json') }}
+          restore-keys: |
+            journey-sets-
+      - name: Render the sets
+        if: steps.sets.outputs.cache-hit != 'true'
+        run: |
+          while sudo fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 2; done
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          mkdir -p "$SETS"
+          curl -sSfL -o "$SETS/Michelle.glb" https://raw.githubusercontent.com/mrdoob/three.js/r170/examples/models/gltf/Michelle.glb
+          echo "7a87e15a99ccbc5e5877be66e1e4ecae0a581adcafa0cce1a5569f49909e968e  $SETS/Michelle.glb" | sha256sum -c -
+          export SYNTH_MODEL="$SETS/Michelle.glb" FFMPEG="$(command -v ffmpeg)"
+          node test/real-phone/synth/run-video.mjs "$SETS/lateral_raise_front_8.webm" '{"video":{"w":720,"h":1280,"fps":30},"id":"v1","exercise":"lateral_raise","view":0,"reps":8,"peakL":95,"peakR":80,"seed":7}'
+          node test/real-phone/synth/run-video.mjs "$SETS/curl_side_6.webm" '{"video":{"w":720,"h":1280,"fps":30},"id":"v3","exercise":"bicep_curl","view":90,"reps":6,"peakL":130,"peakR":130,"seed":12}'
+          node test/real-phone/synth/run-video.mjs "$SETS/chair_15.webm" '{"video":{"w":720,"h":1280,"fps":30},"id":"c2","exercise":"squat","view":90,"reps":15,"outSec":0.8,"backSec":0.8,"endRest":4,"peakL":95,"peakR":95,"seed":21,"seated":true,"endUp":true,"window":30}'
+      - name: Keep the rendered sets
+        if: steps.sets.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .journey-sets
+          key: ${{ steps.sets.outputs.cache-primary-key }}
+      - name: Lateral raise from the front, corrected by typing 12, the contribution kept
+        run: STRICT=1 AXE=node_modules/axe-core/axe.min.js TYPE=12 CONTRIBUTE=1 SHOTS=journey/lateral-raise node test/real-phone/synth/smoke.mjs "$SETS/lateral_raise_front_8.webm" lateral_raise "Élévations latérales"
+      - name: Curl from the side, the count accepted
+        if: always()
+        run: STRICT=1 AXE=node_modules/axe-core/axe.min.js SHOTS=journey/curl node test/real-phone/synth/smoke.mjs "$SETS/curl_side_6.webm" bicep_curl "Curl biceps"
+      # The 30-second chair stand (fitness-tests.js): starts seated, 15 stands, the last ending standing at about
+      # 30 s, as a test usually ends; the score is the protocol's (synth.js, window), chosen from its row.
+      - name: Chair stand test, 15 in 30 s, the last ended standing
+        if: always()
+        run: STRICT=1 AXE=node_modules/axe-core/axe.min.js TEST=chair_stand_test SHOTS=journey/chair-stand node test/real-phone/synth/smoke.mjs "$SETS/chair_15.webm" chair_stand_test "-"
+      - name: Keep the shots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: journey-${{ github.sha }}
+          path: journey/
+          retention-days: 5

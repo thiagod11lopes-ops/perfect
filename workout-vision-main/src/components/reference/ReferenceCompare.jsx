@@ -1,0 +1,110 @@
+import { useEffect, useRef, useState } from 'react';
+import { useT } from '../../lib/LanguageContext';
+import { hapticLight } from '../../lib/haptics';
+import { useCondensingTopbar } from '../experience/topbar';
+import { Topbar } from '../experience/Showcase';
+import { readPose } from '../../lib/reference/readPose';
+import ComparisonView from './ComparisonView';
+import { kineJudged } from '../../lib/buildFlags';
+import { FilePick } from './parts';
+import { useObjectUrl } from '../../lib/reference/useObjectUrl';
+import { COPY } from './reference-copy';
+import './ReferenceCompare.css';
+
+// Two videos chosen on the phone, a reference and an attempt, compared (ComparisonView.jsx). The physiotherapist's
+// workspace (KineWorkspace.jsx) opens it for any exercise outside the built-in library. Both videos stay on the phone.
+
+// audience 'coach' (Pro.jsx): the coach's own video beside the client's, in the coach's words, no healthy-side mode and
+// no verdict whatever the build (David, 18 November 2026).
+export default function ReferenceCompare({ onClose, embedded = false, audience = 'kine' }) {
+  const { lang } = useT();
+  const fr = lang === 'fr';
+  const coach = audience === 'coach';
+  const base = COPY[fr ? 'fr' : 'en'];
+  const c = coach ? { ...base, ...base.coach } : base;
+  const screenRef = useRef(null);
+  useCondensingTopbar(screenRef, [lang]);
+
+  const [refFile, setRefFile] = useState(null);
+  const [attFile, setAttFile] = useState(null);
+  const [refPose, setRefPose] = useState(null);
+  const [attPose, setAttPose] = useState(null);
+  const [phase, setPhase] = useState('pick');
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState('');
+  // The patient's own healthy side as the reference (David and the physiotherapist, meeting of 9 November 2026): the
+  // healthy side filmed first, the side in rehabilitation second, read as in a mirror (compare.js compareAttempt,
+  // `mirror`). The share "reached" of each joint is then the treated side's range over the healthy side's, the limb
+  // symmetry index. Same engine and same provisional tolerance as the physiotherapist's reference. Status: experimental.
+  const [mode, setMode] = useState('kine');
+  const healthy = mode === 'healthy';
+  const pickMode = m => { hapticLight(); setMode(m); setAttPose(null); setPhase('pick'); };
+  const abortRef = useRef(null);
+  const refUrl = useObjectUrl(refFile);
+  const attUrl = useObjectUrl(attFile);
+
+  const pickRef = f => { setRefFile(f); setRefPose(null); setAttPose(null); setPhase('pick'); };
+  const pickAtt = f => { setAttFile(f); setAttPose(null); setPhase('pick'); };
+
+  const run = async () => {
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setError('');
+    try {
+      let r = refPose;
+      if (!r) {
+        setPhase('reading-ref'); setProgress(0);
+        r = await readPose(refFile, { signal: ctrl.signal, onProgress: p => setProgress(p) });
+        setRefPose(r);
+      }
+      setPhase('reading-att'); setProgress(0);
+      const a = await readPose(attFile, { signal: ctrl.signal, onProgress: p => setProgress(p) });
+      setAttPose(a);
+      setPhase('done');
+    } catch (err) {
+      if (err?.name === 'AbortError') { setPhase('pick'); return; }
+      setError(err?.message || String(err));
+      setPhase('error');
+    }
+  };
+  useEffect(() => () => abortRef.current?.abort(), []);
+  const reading = phase === 'reading-ref' || phase === 'reading-att';
+
+  const content = <>
+    <div className="sc-section rc-picks">
+      {!coach && <div className="sc-chips" role="group" aria-label={c.modeLabel}>
+        <button type="button" className="sc-chip press" aria-pressed={!healthy} onClick={() => pickMode('kine')} data-testid="rc-mode-kine">{c.modeKine}</button>
+        <button type="button" className="sc-chip press" aria-pressed={healthy} onClick={() => pickMode('healthy')} data-testid="rc-mode-healthy">{c.modeHealthy}</button>
+      </div>}
+      {healthy && <p className="sc-caption" data-testid="rc-healthy-note">{c.healthyNote}</p>}
+      <FilePick label={healthy ? c.healthyRefLabel : c.refLabel} hint={healthy ? c.healthyRefHint : c.refHint} file={refFile} onFile={pickRef} c={c} testId="rc-ref" />
+      <FilePick label={healthy ? c.healthyAttLabel : c.attLabel} hint={healthy ? c.healthyAttHint : c.attHint} file={attFile} onFile={pickAtt} c={c} testId="rc-att" />
+      {!reading && phase !== 'done' && <button type="button" className="rc-btn is-primary is-wide press" disabled={!refFile || !attFile} onClick={run} data-testid="rc-compare">{c.compare}</button>}
+      {reading && <div className="rc-progress" role="status" data-testid="rc-progress">
+        <span>{phase === 'reading-ref' ? c.readingRef : c.readingAtt}</span>
+        <div className="rc-bar"><i style={{ width: `${Math.round(progress)}%` }} /></div>
+        <button type="button" className="rc-link press" onClick={() => abortRef.current?.abort()}>{c.cancel}</button>
+      </div>}
+      {phase === 'error' && <p className="rc-error" role="alert" data-testid="rc-error">{c.failed} <small>{error}</small> <button type="button" className="rc-link press" onClick={run}>{c.retry}</button></p>}
+    </div>
+    {phase === 'done' && <>
+      {healthy && kineJudged() && <p className="sc-caption" data-testid="rc-healthy-read">{c.healthyRead}</p>}
+      <ComparisonView refPose={refPose} attPose={attPose} refUrl={refUrl} attUrl={attUrl} mirror={healthy} judged={coach ? false : kineJudged()} audience={audience} />
+      <button type="button" className="rc-btn is-wide press" onClick={() => { hapticLight(); setAttFile(null); setAttPose(null); setPhase('pick'); }} data-testid="rc-new">{c.newAttempt}</button>
+    </>}
+  </>;
+  if (embedded) return content;
+  return (
+    <div className="wv-experience">
+      <section ref={screenRef} className="screen is-active sc-screen rc-screen" data-testid={coach ? 'coach-compare-screen' : 'reference-screen'}>
+        <div className="wrap">
+          <Topbar fr={fr} backTestId="reference-back-btn" onBack={onClose || (() => { window.location.hash = ''; })} />
+          <p className="eyebrow">{c.eyebrow}</p>
+          <h1 className="title">{c.title}</h1>
+          <p className="sub">{!coach && kineJudged() ? c.sub : c.subPlain}</p>
+          {content}
+        </div>
+      </section>
+    </div>
+  );
+}

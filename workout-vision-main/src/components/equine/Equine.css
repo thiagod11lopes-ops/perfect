@@ -1,0 +1,35 @@
+/* EquiVision (Equine.jsx): the experience's wrapper, topbar and tokens, with the showcase parts of Showcase.css
+   (design/SYSTEM.md). Only what is the screen's own is here: the statement under the visitor's video, the legend of
+   the simulated curve, the images-a-second control, the roadmap cards and the open card. The head in the lamp, the
+   pelvis in bone (palette.js).
+   Status: convention (the app's design system; no measurement involved). */
+
+.wv-experience .equine-screen .equine-hero { margin-top: var(--s-6); }
+
+/* The statement under the visitor's own video: a card in the lamp's outline, so it reads as the answer. */
+.wv-experience .equine-own { border-color: var(--lamp-line); gap: var(--s-2); }
+.wv-experience .equine-own-title { margin: 0; font-size: var(--fs-body); font-weight: 600; line-height: 1.35; color: var(--lamp-hi); }
+
+/* The images-a-second control: its name above it, as a slider's label sits above its track. */
+.wv-experience .equine-rate { display: flex; flex-direction: column; gap: var(--s-2); }
+.wv-experience .equine-rate-head { font-size: var(--fs-caption); line-height: 1.4; color: var(--bone-2); }
+
+/* The legend of the simulated curve, above its frame: two lines, then the two dips (A filled, B hollow). */
+.wv-experience .equine-legend { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-4); font-size: var(--fs-caption); color: var(--bone-2); }
+.wv-experience .equine-legend .legend-item { display: inline-flex; align-items: center; gap: var(--s-2); }
+.wv-experience .equine-legend .legend-color { width: 16px; height: 3px; border-radius: 2px; }
+.wv-experience .equine-legend .legend-head { background: var(--c-accent); }
+.wv-experience .equine-legend .legend-pelvis { background: var(--bone); }
+.wv-experience .equine-legend .legend-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bone-2); }
+.wv-experience .equine-legend .legend-dot.is-hollow { background: transparent; box-shadow: inset 0 0 0 1.5px var(--bone-2); }
+
+/* What a real reading would take: three short cards. */
+.wv-experience .equine-points { display: flex; flex-direction: column; gap: var(--s-2); }
+.wv-experience .equine-points .sc-card { padding: 14px 16px; gap: var(--s-2); border-radius: var(--r-s); }
+.wv-experience .equine-points .sc-head-title { color: var(--lamp-hi); }
+
+/* The open card, under the demo clip: the whole card is the button. */
+.wv-experience .equine-upload { width: 100%; align-items: center; text-align: center; gap: var(--s-2); padding: 22px 18px; border-style: dashed; border-color: var(--hair-2); }
+.wv-experience .equine-upload .upload-icon { width: 22px; height: 22px; color: var(--c-accent); }
+.wv-experience .equine-upload-title { font-size: var(--fs-body); font-weight: 600; color: var(--c-fg); text-wrap: balance; }
+.wv-experience .equine-view { margin: var(--s-2) 0 var(--s-3); }

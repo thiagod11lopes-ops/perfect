@@ -1,0 +1,56 @@
+{
+  "name": "WorkoutVision",
+  "short_name": "WorkoutVision",
+  "description": "Counts your repetitions from a video, on your phone. Test version.",
+  "categories": ["fitness"],
+  "start_url": "/workout-vision/",
+  "scope": "/workout-vision/",
+  "display": "standalone",
+  "background_color": "#080706",
+  "theme_color": "#080706",
+  "shortcuts": [
+    {
+      "name": "Find an exercise",
+      "short_name": "Exercises",
+      "url": "/workout-vision/#exercises",
+      "icons": [{ "src": "/workout-vision/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Your sets",
+      "short_name": "Your sets",
+      "url": "/workout-vision/#history",
+      "icons": [{ "src": "/workout-vision/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "icons": [
+    {
+      "src": "/workout-vision/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/workout-vision/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/workout-vision/icon-192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/workout-vision/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/workout-vision/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

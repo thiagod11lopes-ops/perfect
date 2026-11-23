@@ -1,0 +1,1 @@
+WorkoutVision: PNG frames resized to 320 × 320 and converted to WebP. Adapted images remain CC BY-SA 4.0.

@@ -1,0 +1,93 @@
+import { compactWave, waveAngles } from './wave';
+
+/**
+ * The set as the result screen saves it (storage.saveWorkout): what the app counted stays apart from what the
+ * person kept. n: the count kept; corrected: true when the person typed it. A set the app counted no rep in
+ * (Result.jsx, unsure) is saved with the person's count, its machineResult 0 and its correctedResult theirs,
+ * so the history, the report, the spreadsheet and the contributions say the app counted none (R8).
+ */
+// manual: a set the app refused, whose count the person typed (WP1.6 of docs/SPEC-production.md). It is saved as theirs
+// alone: no count of the app, no rep details, no measure, no wave; the history, the report and the spreadsheet say
+// "saisi à la main". No arm: the app could not see one (the core's default side is no observation). afterRefusal tells
+// these from the sets ManualLog.jsx typed (25-26 September), which the app never tried to count.
+// proposal: PSC's count offered on the refused set's screen (Result.jsx, 8 October 2026), kept beside the person's
+// count as { reps, by: 'psc' } so the history can tell a confirmed proposal from a typed count; never a count of the
+// core (machineResult stays null).
+// planned: the coach's target when the set was filmed from a programme (programme.js, plannedOf); the programme's
+// screen reads it to show the set beside its target, and the report prints it ("Prévu : 3 × 10"). Absent otherwise.
+/**
+ * Whether a counted set shows its measures (rep details, left against right, wave): not while the body check's flag
+ * stands unanswered (coreAnalysis.js withBodyCheck, 8 October 2026), since they are all read on the counted joint's
+ * angle, the one the check found disagreeing with the rest of the body (R8). Once the person has confirmed or corrected
+ * the count (answered), they are shown with the doubt named beside them (David, 21 and 24 October 2026: the card had no
+ * analysis after he confirmed; on his videos the check flags 5 of the 11 counted (13 filmed, 2 refused) and the app's
+ * count was right on 3 of those 5, test/real-phone/accuracy/body-check.txt). The replay reads this; the saved set keeps them, as it is saved only once
+ * answered. Status: convention, from R8 as David amended it.
+ */
+export const keepsMeasures = (result, answered = false) => answered || result?.bodyCheck?.flagged !== true;
+
+// blind: the count the person gave before the app showed its own (blind.js), as { count, p }, count null for "Je ne sais
+// pas"; kept with the set when it was asked, so the history and the exports can tell a blind count from one given after.
+// choice: on a counted set offered its two neighbours in one tap (result-choices.js; pillar 2), what was offered and
+// how the number was given: { rule, offered: [M, M + 1, M - 1], picked: 'main' | 'alt' | 'typed' }. Absent otherwise.
+export function savedSet({ result, lift, n, corrected, sides = null, manual = false, now = new Date(), planned = null, proposal = null, blind = null, choice = null }) {
+  const withPlan = set => ({ ...set, ...(planned ? { planned } : {}), ...(blind ? { blind: { count: blind.count ?? null, p: blind.p } } : {}), ...(choice ? { choice } : {}) });
+  if (manual) {
+    return withPlan({
+      exercise: lift, reps: n, repDetails: [], arm: null, confidence: null, afterRefusal: true,
+      date: now.toISOString(), source: 'manual', duration: result.metadata?.duration, corrected: true,
+      sides: null, machineResult: null, correctedResult: { reps: n }, repDetailsVersion: 2, wave: null,
+      // by: 'psc' (the core's proposal on a refused set) or 'universal' (an exercise the core does not offer,
+      // universalProposal.js), so the history can tell them apart.
+      ...(proposal ? { proposal: { reps: proposal, by: result?.proposal?.by === 'universal' ? 'universal' : 'psc' } } : {}),
+    });
+  }
+  const count = result.count;
+  // A set the body check flagged keeps its measures, saved only once the person answered (keepsMeasures); the check's
+  // numbers go with it, so the history and the report name the doubt.
+  const flagged = result.bodyCheck?.flagged === true;
+  return withPlan({
+    exercise: lift, reps: n, repDetails: result.reps, arm: result.arm, confidence: result.confidence,
+    date: now.toISOString(), source: 'counter-core', duration: result.metadata?.duration, corrected,
+    // Measured over the app's marks: kept only when the saved count is the app's, or when the set was read again for
+    // the person's count and its reps found (coreAnalysis.js recountTo; then repDetails are those reps).
+    sides: n === count || result.recount?.n === n ? sides : null,
+    // What the app counted stays apart from what the visitor kept.
+    machineResult: { reps: count, confidence: result.confidence ?? null },
+    // Where the body went unseen (counting/doubt.js), numbers only: stored, read by no screen yet.
+    doubt: result.doubt ?? null,
+    correctedResult: n !== count ? { reps: n } : null,
+    // A corrected count whose reps were found again (recountTo, 18 October 2026): the counter's setting that found them;
+    // repDetails and the wave are of that reading. Absent otherwise.
+    ...(result.recount?.n === n ? { recount: { tuning: result.recount.tuning } } : {}),
+    // A set the body check flagged (coreAnalysis.js withBodyCheck, 8 October 2026), confirmed or changed by the person
+    // on the low-confidence screen: the agreement and the spec-guided count offered beside the app's (null when none),
+    // so the history can tell these sets apart. Absent on a set the check did not flag.
+    ...(flagged ? { bodyCheck: { agreement: result.bodyCheck.agreement, second: result.bodyCheck.second?.count ?? null } } : {}),
+    // The sensitivity check's recounts (coreAnalysis.js withSensitivity, 10 October 2026), kept on every counted set it
+    // ran on, shown or not, so blind counts can later say whether a moved count is more often wrong (R8).
+    ...(result.sensitivity ? { sensitivity: { moved: !!result.sensitivity.moved, counts: result.sensitivity.counts } } : {}),
+    // Rep details measured with step 3c's boundaries; older sets' details are not shown.
+    repDetailsVersion: 2,
+    // No partial count, symmetry score, consistency, SPARC, form check, joint load, certificate or VBT is saved (honesty
+    // audit of 14 October 2026): none was measured against known truth (R8). Sets saved on 11-14 October may still hold
+    // them; no screen, report or export reads them.
+    // The measured angle over the set, compact, for the report's wave (wave.js).
+    wave: compactWave(waveAngles(result), result.timestamps),
+  });
+}
+
+/** Parses an optional load entered in kg; returns a positive number or null (never 0). */
+export function parseLoadKg(raw) {
+  if (typeof raw === 'number') return Number.isFinite(raw) && raw > 0 ? Math.round(raw * 100) / 100 : null;
+  if (typeof raw !== 'string') return null;
+  const text = raw.trim().replace(',', '.');
+  if (!/^\d+(?:\.\d+)?$/.test(text)) return null;
+  const value = Number(text);
+  return Number.isFinite(value) && value > 0 ? Math.round(value * 100) / 100 : null;
+}
+
+/** Formats a stored positive load in kg with a non-breaking space before the unit. */
+export function formatLoadKg(kg, fr = false) {
+  return `${kg.toLocaleString(fr ? 'fr-FR' : 'en-GB', { maximumFractionDigits: 2 })}\u00A0kg`;
+}

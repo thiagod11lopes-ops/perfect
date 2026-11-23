@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' x2='1'><stop offset='0' stop-color='%2300ffd5'/><stop offset='1' stop-color='%23ff00ff'/></linearGradient></defs><rect width='64' height='64' rx='12' fill='%230a0420'/><path d='M12 32 Q12 18 26 18 Q40 18 40 32 Q40 46 54 46' stroke='url(%23g)' stroke-width='8' fill='none' stroke-linecap='round'/><circle cx='52' cy='44' r='3' fill='%23fff'/></svg>" />
+    <link rel="icon" href="icons/favicon.ico" sizes="any" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#0a0420" />
+    <meta name="description" content="NEON OPHIS — an arcade snake dreaming in 4K." />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="NEON OPHIS" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>NEON OPHIS</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body {
+        width: 100%; height: 100%; overflow: hidden;
+        background: #05030f;
+        color: #e6e0ff;
+        font-family: "Bitcount Grid Double", "Rubik Iso", ui-monospace, "Cascadia Code", "Menlo", monospace;
+        -webkit-font-smoothing: antialiased;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      /* Force-load fonts so canvas can use them on first frame. */
+      .font-preload {
+        position: absolute; left: -9999px; top: -9999px;
+        opacity: 0; pointer-events: none;
+      }
+      .font-preload .a { font-family: "Rubik Iso"; }
+      .font-preload .b { font-family: "Bitcount Grid Double"; }
+      #app {
+        position: fixed; inset: 0;
+        display: grid; place-items: center;
+        background:
+          radial-gradient(ellipse at 50% 0%, #1a0840 0%, #0a0420 35%, #05030f 75%);
+      }
+      #stage {
+        position: relative;
+        width: 100vw; height: 100vh;
+        overflow: hidden;
+      }
+      html.perfect-embed #app,
+      html.perfect-embed #stage {
+        width: 100%;
+        height: 100%;
+        max-width: 100%;
+        max-height: 100%;
+      }
+      html.perfect-embed.phone-embed,
+      html.perfect-embed.phone-embed body {
+        width: 100%;
+        height: 100%;
+        max-width: 100%;
+      }
+      html.perfect-embed.phone-embed #app {
+        width: 100%;
+        height: 100%;
+        place-items: stretch;
+      }
+      html.perfect-embed.phone-embed #stage {
+        width: 100%;
+        height: 100%;
+        max-width: 100%;
+      }
+      html.perfect-embed.phone-embed #game-canvas {
+        left: 0;
+        top: 0;
+        transform: none;
+        margin: 0;
+      }
+      canvas {
+        position: absolute;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+      }
+      #bg-canvas { z-index: 1; }
+      #game-canvas { z-index: 2; }
+      .scanlines {
+        position: absolute; inset: 0;
+        z-index: 5;
+        pointer-events: none;
+        background-image: repeating-linear-gradient(
+          to bottom,
+          rgba(0,0,0,0) 0px,
+          rgba(0,0,0,0) 2px,
+          rgba(0,0,0,0.10) 3px,
+          rgba(0,0,0,0) 4px
+        );
+        mix-blend-mode: multiply;
+        opacity: 0.45;
+      }
+      .vignette {
+        position: absolute; inset: 0;
+        z-index: 6;
+        pointer-events: none;
+        box-shadow: inset 0 0 200px 40px rgba(0,0,0,0.85);
+      }
+      #fade-overlay {
+        position: absolute; inset: 0;
+        z-index: 9; /* above everything during transition */
+        background: #000;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.22s ease;
+      }
+      #fade-overlay.fading { opacity: 1; }
+
+      #touch-overlay {
+        position: absolute; inset: 0;
+        z-index: 7; /* above scanlines/vignette so controls stay crisp + tappable */
+        pointer-events: auto;
+        touch-action: none;
+        display: none;
+      }
+      @media (pointer: coarse) {
+        #touch-overlay { display: block; }
+      }
+      .no-select { user-select: none; -webkit-user-select: none; }
+
+      /* ===== TOUCH CONTROLS (coarse pointers only — desktop never sees these) ===== */
+      .tc-root {
+        position: absolute; inset: 0;
+        pointer-events: none; /* bare areas fall through to swipe handler */
+      }
+      .tc-root > * { pointer-events: auto; }
+      .tc-menucatch, .tc-menuhint, .tc-topbar,
+      .tc-modal, .tc-overbar, .tc-name, .tc-creditsback, .tc-scoresbar, .tc-splash,
+      .tc-lang { display: none; }
+
+      /* Per-screen visibility, driven by main.ts via data-tc */
+      #touch-overlay[data-tc="splash"] .tc-splash,
+      #touch-overlay[data-tc="splash"] .tc-lang,
+      #touch-overlay[data-tc="menu"] .tc-lang { display: flex; }
+      #touch-overlay[data-tc="menu"] .tc-menucatch,
+      #touch-overlay[data-tc="menu"] .tc-menuhint { display: flex; }
+      #touch-overlay[data-tc="play"] .tc-topbar { display: grid; }
+      #touch-overlay[data-tc="confirm"] .tc-topbar { display: grid; }
+      #touch-overlay[data-tc="confirm"] .tc-modal { display: flex; }
+      #touch-overlay[data-tc="gameover"] .tc-overbar { display: flex; }
+      #touch-overlay[data-tc="name"] .tc-name { display: flex; }
+      #touch-overlay[data-tc="credits"] .tc-creditsback { display: flex; }
+      #touch-overlay[data-tc="scores"] .tc-scoresbar { display: flex; }
+
+      .tc-menucatch { position: absolute; inset: 0; }
+      .tc-menuhint {
+        position: absolute; left: 0; right: 0;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+        justify-content: center;
+        font: 16px "Bitcount Grid Double", monospace;
+        color: rgba(255,255,255,0.55);
+        letter-spacing: 2px; text-transform: uppercase;
+        pointer-events: none;
+      }
+
+      .tc-action {
+        -webkit-tap-highlight-color: transparent;
+        touch-action: none; user-select: none;
+        font-family: "Bitcount Grid Double", monospace;
+        color: #d7f9ff;
+        background: rgba(10, 6, 30, 0.42);
+        border: 2px solid rgba(0, 255, 213, 0.55);
+        box-shadow: 0 0 14px rgba(0, 255, 213, 0.30),
+                    inset 0 0 12px rgba(0, 255, 213, 0.12);
+        backdrop-filter: blur(2px);
+        border-radius: 14px;
+        display: grid; place-items: center;
+        transition: transform .05s ease, background .08s ease, box-shadow .08s ease;
+      }
+      .tc-action:active {
+        transform: scale(0.94);
+        background: rgba(0, 255, 213, 0.22);
+        box-shadow: 0 0 22px rgba(0, 255, 213, 0.55),
+                    inset 0 0 16px rgba(0, 255, 213, 0.30);
+      }
+
+      /* Top bar — minimal pause / quit (icon-only, no chrome) */
+      .tc-topbar {
+        position: absolute;
+        top: calc(env(safe-area-inset-top, 0px) + 10px);
+        right: calc(env(safe-area-inset-right, 0px) + 14px);
+        grid-auto-flow: column; gap: 14px;
+      }
+      .tc-pill {
+        -webkit-tap-highlight-color: transparent;
+        touch-action: none; user-select: none;
+        font-family: "Bitcount Grid Double", monospace;
+        width: 36px; height: 36px;
+        font-size: 18px; line-height: 1;
+        background: transparent; border: none; padding: 0;
+        display: grid; place-items: center;
+        color: rgba(0, 255, 213, 0.65);
+        text-shadow: 0 0 6px rgba(0, 255, 213, 0.55);
+        opacity: 0.75;
+        transition: opacity .08s ease, transform .05s ease, text-shadow .08s ease;
+      }
+      .tc-pill[aria-label="quit"] {
+        color: rgba(255, 95, 130, 0.7);
+        text-shadow: 0 0 6px rgba(255, 95, 130, 0.55);
+      }
+      .tc-pill:active {
+        opacity: 1;
+        transform: scale(0.9);
+        text-shadow: 0 0 12px rgba(0, 255, 213, 0.9);
+      }
+      .tc-pill[aria-label="quit"]:active {
+        text-shadow: 0 0 12px rgba(255, 95, 130, 0.9);
+      }
+
+      .tc-action {
+        min-width: 132px; height: 60px; padding: 0 22px;
+        font-size: 20px; letter-spacing: 1px;
+      }
+      .tc-primary { border-color: rgba(0, 255, 213, 0.7); color: #aeffee; }
+      .tc-danger  {
+        border-color: rgba(255, 60, 100, 0.75); color: #ffb3c4;
+        box-shadow: 0 0 14px rgba(255, 60, 100, 0.30),
+                    inset 0 0 12px rgba(255, 60, 100, 0.12);
+      }
+      .tc-danger:active {
+        background: rgba(255, 60, 100, 0.22);
+        box-shadow: 0 0 22px rgba(255, 60, 100, 0.55);
+      }
+
+      /* Confirm-quit modal */
+      .tc-modal {
+        position: absolute; left: 50%; top: 50%;
+        transform: translate(-50%, -50%);
+        flex-direction: column; align-items: center; gap: 22px;
+        padding: 30px 38px;
+        background: rgba(8, 2, 26, 0.92);
+        border: 2px solid rgba(255, 60, 100, 0.7);
+        border-radius: 18px;
+        box-shadow: 0 0 30px rgba(255, 60, 100, 0.4);
+      }
+      .tc-modal-title {
+        font: 40px "Rubik Iso", monospace; color: #ff3c64;
+        text-shadow: 0 0 16px rgba(255, 60, 100, 0.8);
+      }
+      .tc-modal-row { display: flex; gap: 16px; }
+
+      /* Game-over bar */
+      .tc-overbar {
+        position: absolute; left: 50%;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
+        transform: translateX(-50%);
+        gap: 16px; flex-wrap: wrap; justify-content: center;
+      }
+
+      /* Name entry — native keyboard on tap */
+      .tc-name {
+        position: absolute; left: 50%;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
+        transform: translateX(-50%);
+        flex-direction: column; align-items: center; gap: 14px;
+        width: min(86vw, 420px);
+      }
+      .tc-name-label {
+        font: 15px "Bitcount Grid Double", monospace;
+        color: rgba(255,255,255,0.6);
+        letter-spacing: 2px; text-transform: uppercase;
+      }
+      .tc-name-input {
+        -webkit-tap-highlight-color: transparent;
+        width: 100%; height: 58px; padding: 0 18px;
+        font: 28px "Bitcount Grid Double", monospace;
+        text-align: center; letter-spacing: 8px; text-transform: uppercase;
+        color: #ffe855; caret-color: #ffe855;
+        background: rgba(10, 6, 30, 0.6);
+        border: 2px solid rgba(255, 232, 85, 0.6);
+        border-radius: 12px; outline: none;
+        box-shadow: 0 0 18px rgba(255, 232, 85, 0.25),
+                    inset 0 0 12px rgba(255, 232, 85, 0.12);
+      }
+      .tc-name-input::placeholder { color: rgba(255, 232, 85, 0.35); }
+
+      /* Splash play button — centered, floating */
+      @keyframes tc-float {
+        0%, 100% { transform: translate(-50%, 0); }
+        50%       { transform: translate(-50%, -12px); }
+      }
+      .tc-splash {
+        position: absolute; left: 50%; top: 48%;
+        transform: translateX(-50%);
+        justify-content: center;
+        animation: tc-float 2.4s ease-in-out infinite;
+      }
+      .tc-splash .tc-action {
+        min-width: 180px; height: 76px;
+        font-size: 26px; letter-spacing: 3px;
+        padding: 0 32px;
+      }
+
+      /* Credits back button */
+      .tc-creditsback {
+        position: absolute;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
+        left: 50%; transform: translateX(-50%);
+        justify-content: center;
+      }
+
+      /* Scores bar — prev mode / back / next mode */
+      .tc-scoresbar {
+        position: absolute;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
+        left: 50%; transform: translateX(-50%);
+        justify-content: center;
+        gap: 12px;
+      }
+      /* Arrow buttons only need space for a single glyph */
+      .tc-scoresbar .tc-action {
+        min-width: 56px; padding: 0 16px;
+      }
+
+      /* Language toggle — top-center on splash & menu */
+      .tc-lang {
+        position: absolute; left: 50%;
+        top: calc(env(safe-area-inset-top, 0px) + 14px);
+        transform: translateX(-50%);
+        gap: 10px;
+      }
+      .tc-langbtn {
+        -webkit-tap-highlight-color: transparent;
+        touch-action: none; user-select: none;
+        font: 16px "Bitcount Grid Double", monospace;
+        letter-spacing: 1px;
+        min-width: 56px; height: 40px; padding: 0 14px;
+        display: grid; place-items: center;
+        color: rgba(230, 224, 255, 0.7);
+        background: rgba(10, 6, 30, 0.42);
+        border: 2px solid rgba(255, 255, 255, 0.22);
+        border-radius: 12px;
+        transition: transform .05s ease, background .08s ease,
+                    box-shadow .08s ease, color .08s ease;
+      }
+      .tc-langbtn:active { transform: scale(0.94); }
+      .tc-langbtn.active {
+        color: #eafff9;
+        border-color: rgba(0, 255, 213, 0.7);
+        background: rgba(0, 255, 213, 0.16);
+        box-shadow: 0 0 14px rgba(0, 255, 213, 0.35),
+                    inset 0 0 12px rgba(0, 255, 213, 0.15);
+      }
+
+      /* Mode select modal — tap a mode in the menu → this appears */
+      .tc-mode-modal {
+        display: none;
+        position: absolute; left: 50%; top: 50%;
+        transform: translate(-50%, -50%);
+        flex-direction: column; align-items: center; gap: 18px;
+        padding: 28px 32px;
+        width: min(88vw, 380px);
+        background: rgba(8, 2, 26, 0.95);
+        border: 2px solid rgba(0, 255, 213, 0.65);
+        border-radius: 18px;
+        box-shadow: 0 0 32px rgba(0, 255, 213, 0.35);
+        text-align: center;
+      }
+      .tc-mode-modal.active { display: flex; }
+      .tc-mode-modal-title {
+        font: 32px "Rubik Iso", monospace;
+        color: #00ffd5;
+        text-shadow: 0 0 16px rgba(0, 255, 213, 0.8);
+      }
+      .tc-mode-modal-blurb {
+        font: 18px "Bitcount Grid Double", monospace;
+        color: rgba(180, 240, 255, 0.85);
+        line-height: 1.55;
+      }
+      .tc-mode-modal-hi {
+        font: 16px "Bitcount Grid Double", monospace;
+        color: #ffe855;
+      }
+      .tc-mode-modal-row { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+    </style>
+    <script type="module" crossorigin src="/games/neonophis/assets/index-CkOz_zA0.js"></script>
+    <link rel="stylesheet" crossorigin href="/games/neonophis/assets/index-CnIAZ501.css">
+  </head>
+  <body>
+    <div class="font-preload" aria-hidden="true">
+      <span class="a">.</span><span class="b">.</span>
+    </div>
+    <div id="app">
+      <div id="stage">
+        <canvas id="bg-canvas"></canvas>
+        <canvas id="game-canvas"></canvas>
+        <div id="touch-overlay"></div>
+        <div id="fade-overlay"></div>
+        <div class="scanlines"></div>
+        <div class="vignette"></div>
+      </div>
+    </div>
+  </body>
+</html>

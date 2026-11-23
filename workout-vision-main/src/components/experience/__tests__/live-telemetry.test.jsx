@@ -1,0 +1,59 @@
+import { describe, it, expect, vi } from 'vitest';
+
+vi.hoisted(() => {
+  const any = new Proxy(function stub() {}, { get: (_, k) => (k === Symbol.toPrimitive ? () => 0 : any), apply: () => any, set: () => true });
+  globalThis.window ??= { devicePixelRatio: 1, matchMedia: () => ({ matches: false }) };
+  globalThis.document ??= { createElement: () => any };
+});
+
+import {
+  extractLiveJointAngle,
+  PHASE_LABELS,
+} from '../Live';
+
+describe('Live biomechanical telemetry & phase classification', () => {
+
+  it('provides bilingual labels for all 4 micro-sequence phases', () => {
+    const phases = ['concentric', 'amortization_sticking', 'eccentric', 'lockout_rest'];
+    for (const p of phases) {
+      expect(PHASE_LABELS.fr[p]).toBeTruthy();
+      expect(PHASE_LABELS.en[p]).toBeTruthy();
+    }
+    expect(PHASE_LABELS.fr.concentric).toBe('Propulsion');
+    expect(PHASE_LABELS.fr.amortization_sticking).toBe('Point critique');
+    expect(PHASE_LABELS.fr.eccentric).toBe('Descente');
+  });
+
+  it('extracts live joint angles accurately from 33 pose landmarks', () => {
+    // Synthetic landmarks where knee is bent at 90 degrees
+    const fakeLandmarks = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 0.9 }));
+    // Hip (23): (0.5, 0.2)
+    fakeLandmarks[23] = { x: 0.5, y: 0.2, visibility: 0.9 };
+    // Knee (25): (0.5, 0.5)
+    fakeLandmarks[25] = { x: 0.5, y: 0.5, visibility: 0.9 };
+    // Ankle (27): (0.8, 0.5) -> horizontal shin, vertical thigh -> 90 degrees
+    fakeLandmarks[27] = { x: 0.8, y: 0.5, visibility: 0.9 };
+
+    const kneeAngle = extractLiveJointAngle(fakeLandmarks, { joint: 'knee' });
+    expect(kneeAngle).toBeCloseTo(90, 0);
+
+    // When landmarks are null, returns null
+    expect(extractLiveJointAngle(null, { joint: 'knee' })).toBeNull();
+  });
+
+  it('evaluates L5/S1 lumbar inverse dynamics with shear and compressive reaction forces', async () => {
+    const { computeL5S1InverseDynamics } = await import('../../../lib/biomechanics/l5s1InverseDynamics');
+    const fakeLandmarks = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 0.9 }));
+    fakeLandmarks[11] = { x: 0.8, y: 0.4, visibility: 0.95 };
+    fakeLandmarks[12] = { x: 0.9, y: 0.4, visibility: 0.95 };
+    fakeLandmarks[23] = { x: 0.45, y: 0.6, visibility: 0.95 };
+    fakeLandmarks[24] = { x: 0.55, y: 0.6, visibility: 0.95 };
+
+    const l5s1 = computeL5S1InverseDynamics({ landmarks: fakeLandmarks, lift: 'deadlift', loadKg: 60 });
+    expect(l5s1).not.toBeNull();
+    if (!l5s1) return;
+    expect(l5s1.shearForceN).toBeGreaterThan(400);
+    expect(l5s1.compressiveForceN).toBeGreaterThan(2000);
+    expect(l5s1.reactionTorqueNm).toBeGreaterThan(100);
+  });
+});

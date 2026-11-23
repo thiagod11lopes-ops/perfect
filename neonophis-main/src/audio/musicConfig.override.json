@@ -1,0 +1,629 @@
+{
+  "rootMidi": 45,
+  "scale": [
+    0,
+    1,
+    4,
+    6,
+    7,
+    10,
+    11
+  ],
+  "bpm": {
+    "scoreSteps": [
+      {
+        "score": 0,
+        "bpm": 120
+      },
+      {
+        "score": 50,
+        "bpm": 138
+      },
+      {
+        "score": 150,
+        "bpm": 155
+      },
+      {
+        "score": 300,
+        "bpm": 174
+      }
+    ],
+    "comboBonus": [
+      {
+        "combo": 4,
+        "addBpm": 15
+      },
+      {
+        "combo": 9,
+        "addBpm": 30
+      }
+    ],
+    "fireBpm": 25,
+    "iceBpm": -30,
+    "minBpm": 70
+  },
+  "intensity": {
+    "scoreDivisor": 350,
+    "comboBonus": [
+      {
+        "combo": 5,
+        "add": 0.25
+      },
+      {
+        "combo": 10,
+        "add": 0.4
+      }
+    ],
+    "fireAdd": 0.3,
+    "iceAdd": -0.35
+  },
+  "tier": {
+    "tier1": 4,
+    "tier2": 9,
+    "fireDelta": 2,
+    "iceDelta": -2
+  },
+  "barLengthByTier": [
+    15,
+    13,
+    11
+  ],
+  "detuneCentsByTier": [
+    0,
+    24,
+    62
+  ],
+  "bass": {
+    "tier0": {
+      "every": 3,
+      "pattern": [
+        0,
+        6,
+        11,
+        5
+      ],
+      "octaveShift": -12,
+      "wave": "sawtooth",
+      "adsr": {
+        "a": 0.005,
+        "d": 0.12,
+        "s": 0.02,
+        "r": 0.04
+      },
+      "gainBase": 0.07,
+      "gainPerIntensity": 0.04,
+      "filter": "low",
+      "cutoffBase": 450,
+      "cutoffPerIntensity": 800,
+      "q": 4
+    },
+    "tier1": {
+      "every": 4,
+      "pattern": [
+        0,
+        12,
+        6,
+        11,
+        13,
+        7
+      ],
+      "octaveShift": -12,
+      "wave": "square",
+      "adsr": {
+        "a": 0.002,
+        "d": 0.12,
+        "s": 0,
+        "r": 0.04
+      },
+      "gainBase": 0.15,
+      "gainPerIntensity": 0.07,
+      "filter": "band",
+      "cutoffBase": 850,
+      "cutoffPerIntensity": 1400,
+      "q": 8
+    },
+    "tier2": {
+      "every": 2,
+      "pattern": [
+        0,
+        13,
+        1,
+        12,
+        6,
+        5,
+        11,
+        18,
+        7
+      ],
+      "octaveShift": -24,
+      "wave": "sawtooth",
+      "adsr": {
+        "a": 0.001,
+        "d": 0.09,
+        "s": 0.15,
+        "r": 0.03
+      },
+      "gainBase": 0.24,
+      "gainPerIntensity": 0.03,
+      "filter": "low",
+      "cutoffBase": 1500,
+      "cutoffPerIntensity": 2200,
+      "q": 9
+    }
+  },
+  "melody": {
+    "baseOffset": 6,
+    "octaveUpChance": 0.78,
+    "octaveUpSemitones": 13,
+    "byTier": [
+      {
+        "onBeatBase": 0.7,
+        "onBeatIntensityFactor": 1.5,
+        "offBeatBase": 0.6,
+        "offBeatIntensityFactor": 1.2,
+        "offBeatBonus": 0.5,
+        "chromaticChance": 0.4,
+        "wave": "sine",
+        "adsr": {
+          "a": 0.01,
+          "d": 0.18,
+          "s": 0.1,
+          "r": 0.1
+        },
+        "gainBase": 0.02,
+        "gainPerIntensity": 0.03
+      },
+      {
+        "onBeatBase": 0.8,
+        "onBeatIntensityFactor": 0.6,
+        "offBeatBase": 0.65,
+        "offBeatIntensityFactor": 0.5,
+        "offBeatBonus": 0.35,
+        "chromaticChance": 0.75,
+        "wave": "triangle",
+        "adsr": {
+          "a": 0.01,
+          "d": 0.12,
+          "s": 0.3,
+          "r": 0.15
+        },
+        "gainBase": 0.07,
+        "gainPerIntensity": 0.05
+      },
+      {
+        "onBeatBase": 0.9,
+        "onBeatIntensityFactor": 0.5,
+        "offBeatBase": 0.8,
+        "offBeatIntensityFactor": 0.6,
+        "offBeatBonus": 0.4,
+        "chromaticChance": 0.92,
+        "wave": "square",
+        "adsr": {
+          "a": 0.002,
+          "d": 0.08,
+          "s": 0.25,
+          "r": 0.08
+        },
+        "gainBase": 0.13,
+        "gainPerIntensity": 0.06
+      }
+    ]
+  },
+  "kick": {
+    "byTier": [
+      {
+        "positions": [
+          0,
+          6,
+          12
+        ],
+        "alwaysActive": false,
+        "intensityThreshold": 0.25
+      },
+      {
+        "positions": [
+          0,
+          3,
+          6,
+          9,
+          12
+        ],
+        "alwaysActive": true,
+        "intensityThreshold": 0
+      },
+      {
+        "positions": [
+          0,
+          1,
+          4,
+          5,
+          7,
+          8,
+          10
+        ],
+        "alwaysActive": true,
+        "intensityThreshold": 0
+      }
+    ],
+    "heavyTier": 2,
+    "light": {
+      "noise": {
+        "freq": 140,
+        "adsr": {
+          "a": 0,
+          "d": 0.06,
+          "s": 0,
+          "r": 0.03
+        },
+        "gainBase": 0.06,
+        "gainPerIntensity": 0.04,
+        "filter": "low",
+        "cutoff": 220,
+        "q": 2
+      },
+      "body": {
+        "wave": "sine",
+        "freq": 100,
+        "freqEnd": 35,
+        "freqTime": 0.06,
+        "adsr": {
+          "a": 0,
+          "d": 0.09,
+          "s": 0,
+          "r": 0.03
+        },
+        "gain": 0.1
+      }
+    },
+    "heavy": {
+      "noise": {
+        "freq": 120,
+        "adsr": {
+          "a": 0,
+          "d": 0.04,
+          "s": 0,
+          "r": 0.03
+        },
+        "gainBase": 0.16,
+        "gainPerIntensity": 0.07,
+        "filter": "low",
+        "cutoff": 250,
+        "q": 4
+      },
+      "body": {
+        "wave": "sawtooth",
+        "freq": 115,
+        "freqEnd": 28,
+        "freqTime": 0.07,
+        "adsr": {
+          "a": 0,
+          "d": 0.12,
+          "s": 0,
+          "r": 0.04
+        },
+        "gain": 0.18
+      }
+    }
+  },
+  "snare": {
+    "positionsByTier": [
+      [
+        6
+      ],
+      [
+        3,
+        7,
+        10
+      ],
+      [
+        1,
+        3,
+        5,
+        7,
+        9
+      ]
+    ],
+    "gainByTier": [
+      0.03,
+      0.1,
+      0.16
+    ],
+    "noise": {
+      "freq": 950,
+      "adsr": {
+        "a": 0,
+        "d": 0.09,
+        "s": 0,
+        "r": 0.05
+      },
+      "filter": "high",
+      "cutoff": 1000,
+      "q": 3
+    },
+    "body": {
+      "wave": "square",
+      "freq": 180,
+      "adsr": {
+        "a": 0,
+        "d": 0.06,
+        "s": 0,
+        "r": 0.04
+      },
+      "gainFactor": 0.6
+    }
+  },
+  "hat": {
+    "byTier": [
+      {
+        "positions": [
+          3,
+          9
+        ],
+        "intensityMin": 0.4,
+        "gain": 0.03
+      },
+      {
+        "positions": [
+          0,
+          2,
+          3,
+          5,
+          6,
+          8,
+          9,
+          11,
+          12
+        ],
+        "intensityMin": 0.1,
+        "gain": 0.06
+      },
+      {
+        "positions": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14
+        ],
+        "intensityMin": 0,
+        "gain": 0.09
+      }
+    ],
+    "noise": {
+      "freq": 9000,
+      "adsr": {
+        "a": 0,
+        "d": 0.03,
+        "s": 0,
+        "r": 0.01
+      },
+      "filter": "band",
+      "cutoff": 7000,
+      "q": 5
+    }
+  },
+  "cluster": {
+    "enabledTiers": [
+      2
+    ],
+    "position": 3,
+    "chance": 0.75,
+    "intervals": [
+      0,
+      1,
+      6,
+      7,
+      13
+    ],
+    "baseOffset": 18,
+    "wave": "sawtooth",
+    "adsr": {
+      "a": 0.001,
+      "d": 0.08,
+      "s": 0.3,
+      "r": 0.05
+    },
+    "gain": 0.11,
+    "filter": "high",
+    "cutoff": 2800,
+    "q": 7
+  },
+  "fireTexture": {
+    "position": 1,
+    "voices": [
+      {
+        "semitones": -6,
+        "wave": "square",
+        "adsr": {
+          "a": 0.01,
+          "d": 0.2,
+          "s": 0.5,
+          "r": 0.3
+        },
+        "gain": 0.08,
+        "filter": "notch",
+        "cutoff": 800,
+        "q": 8
+      }
+    ]
+  },
+  "iceTexture": {
+    "position": 2,
+    "voices": [
+      {
+        "semitones": 13,
+        "wave": "sawtooth",
+        "adsr": {
+          "a": 0.05,
+          "d": 0.4,
+          "s": 0.2,
+          "r": 0.5
+        },
+        "gain": 0.07
+      },
+      {
+        "semitones": 25,
+        "wave": "square",
+        "adsr": {
+          "a": 0.02,
+          "d": 0.3,
+          "s": 0.1,
+          "r": 0.4
+        },
+        "gain": 0.05
+      }
+    ]
+  },
+  "magnet": {
+    "every": 3,
+    "melody": [
+      0,
+      11,
+      6,
+      7,
+      1,
+      10,
+      13,
+      12,
+      6,
+      0,
+      18,
+      17,
+      11,
+      5,
+      4,
+      1,
+      0,
+      6,
+      11,
+      13,
+      23,
+      24,
+      18,
+      12,
+      7,
+      6,
+      1,
+      0
+    ],
+    "baseOffset": 6,
+    "brass": [
+      {
+        "intervalSemitones": 0,
+        "wave": "square",
+        "detune": -15,
+        "adsr": {
+          "a": 0.002,
+          "d": 0.1,
+          "s": 0.7,
+          "r": 0.1
+        },
+        "gain": 0.14,
+        "filter": "low",
+        "cutoff": 1500,
+        "q": 5
+      },
+      {
+        "intervalSemitones": 6,
+        "wave": "sawtooth",
+        "detune": 15,
+        "adsr": {
+          "a": 0.002,
+          "d": 0.1,
+          "s": 0.7,
+          "r": 0.1
+        },
+        "gain": 0.12,
+        "filter": "low",
+        "cutoff": 1500,
+        "q": 5
+      },
+      {
+        "intervalSemitones": 11,
+        "wave": "square",
+        "adsr": {
+          "a": 0.005,
+          "d": 0.15,
+          "s": 0.5,
+          "r": 0.1
+        },
+        "gain": 0.09,
+        "filter": "band",
+        "cutoff": 1800,
+        "q": 7
+      }
+    ],
+    "timpani": {
+      "wave": "sawtooth",
+      "freq": 90,
+      "freqEnd": 30,
+      "freqTime": 0.15,
+      "adsr": {
+        "a": 0.002,
+        "d": 0.2,
+        "s": 0,
+        "r": 0.08
+      },
+      "gain": 0.16
+    },
+    "snare": {
+      "stepMod": 3,
+      "noise": {
+        "freq": 1300,
+        "adsr": {
+          "a": 0,
+          "d": 0.05,
+          "s": 0,
+          "r": 0.02
+        },
+        "gain": 0.11,
+        "filter": "high",
+        "cutoff": 1600,
+        "q": 4
+      },
+      "body": {
+        "wave": "square",
+        "freq": 240,
+        "adsr": {
+          "a": 0,
+          "d": 0.05,
+          "s": 0,
+          "r": 0.02
+        },
+        "gain": 0.08
+      }
+    },
+    "crash": {
+      "positions": [
+        1,
+        5,
+        9
+      ],
+      "chance": 0.8,
+      "voice": {
+        "wave": "noise",
+        "freq": 4500,
+        "adsr": {
+          "a": 0.002,
+          "d": 0.25,
+          "s": 0.3,
+          "r": 0.2
+        },
+        "gain": 0.09,
+        "filter": "band",
+        "cutoff": 4000,
+        "q": 3
+      }
+    }
+  }
+}

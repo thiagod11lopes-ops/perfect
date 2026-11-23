@@ -1,0 +1,174 @@
+import { useEffect, useRef, useState } from 'react';
+import { analyzeCoreVideo } from '../lib/coreAnalysis';
+import { analyzeUniversalVideo } from '../lib/universalKinematics';
+import { universalAsProposal } from '../lib/universalProposal';
+import { isOffered } from '../lib/offer';
+import Watch from './experience/Watch';
+import Result, { AnalysisError, AnalysisInterrupted, AnalysisIncomplete } from './experience/Result';
+import { watchInterruption, whenVisible, settleRun, holdScreenAwake, isInterruption } from '../lib/interruption';
+import Report from './experience/Report';
+import Replay from './experience/Replay';
+import ScreenFade from './experience/ScreenFade';
+import { track } from '../lib/events';
+import { markCrash, noteError } from '../lib/crashLog';
+import { collectOn } from '../lib/phoneCollect';
+import { blindPlan, blindAnswer } from '../lib/blind';
+import { postPerfectEmbedMessage, readPerfectEmbedConfig } from '../lib/perfectEmbed';
+
+// The crash log's breadcrumbs during the reading of the video (crashLog.js): every 2 s at most, so the log is written
+// about as often as a phone's screen would notice. Convention, UNSOURCED.
+const CRASH_MARK_MS = 2000;
+
+// The analysis of the video chosen on the Film screen: App mounts it only with a lift and a file (App.jsx,
+// page 'analyze'). The old standalone form (lift and file pickers, an 'Arm used' line) and its save of the
+// unconfirmed count, which only ran without a file, could never be reached and were removed (third audit, C51);
+// the Result screen saves the count the user confirms.
+// onNewSet: after a saved set, the next set of the same lift (back to Film); onClose: back to the choice of lift.
+export default function CoreUpload({ onClose, onRefilm, onNewSet = onRefilm, initialLift = '', initialFile = null, planned = null, sample = false }) {
+  const lift = initialLift, file = initialFile;
+  const [progress, setProgress] = useState(0);
+  const [phase, setPhase] = useState('');
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  // The page was hidden during the run (screen locked, app left): no count is shown.
+  const [interrupted, setInterrupted] = useState(false);
+  const [incomplete, setIncomplete] = useState(null); // { read, expected } when the phone read part of the video
+  // The screen open over the result: 'report' or 'replay'; it fades out before it goes.
+  const [overlay, setOverlay] = useState(null);
+  const [overlayLeaving, setOverlayLeaving] = useState(false);
+  const [landmarks, setLandmarks] = useState(null);
+  const [frameSize, setFrameSize] = useState(null);
+  const [reportMeta, setReportMeta] = useState({ count: null, id: null });
+  // The count the user saved on the result, once saved: the replay states it beside the detected marks.
+  const [savedCount, setSavedCount] = useState(null);
+  // The left/right comparison the result screen saved with the set (sides-line.js), for the report.
+  const [savedSides, setSavedSides] = useState(null);
+  // What the saved set measured (Result.jsx onSaved): its reps and wave, read again for the person's count when found,
+  // and whether the body check doubted the joint; the report opened from the result reads them.
+  const [savedMeasures, setSavedMeasures] = useState(null);
+  const abort = useRef(null);
+  const closeTimer = useRef(null);
+  // The blind question (blind.js): on David's phone (#collecte), the person's count is asked while the video is read,
+  // and the app's count waits for the answer. Decided once per set: a restarted analysis keeps the answer given.
+  const [plan] = useState(() => blindPlan({ collect: !sample && collectOn(), video: !!file }));
+  const [blind, setBlind] = useState(null); // { count, p } once answered
+  useEffect(() => () => { abort.current?.abort(); clearTimeout(closeTimer.current); markCrash({ phase: null }); }, []);
+
+  // Arriving from the Film screen with a file, the analysis starts at once. Start and
+  // abort live in one effect, so a remount (StrictMode) restarts it instead of losing it.
+  useEffect(() => {
+    if (!(initialFile && initialLift)) return undefined;
+    const controller = analyze();
+    return () => controller.abort();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function analyze() {
+    const controller = new AbortController();
+    abort.current = controller;
+    run(controller);
+    return controller;
+  }
+
+  async function run(controller) {
+    const mine = () => abort.current === controller;
+    setResult(null); setSavedCount(null); setSavedSides(null); setSavedMeasures(null); setError(null); setInterrupted(false); setIncomplete(null); setProgress(0); setLandmarks(null); setFrameSize(null);
+    let release = () => {}, wake = async () => {};
+    // Crash log (crashLog.js): the phase, then while the video is read, the sample reached and the frame size.
+    let samples = 0, marked = 0;
+    markCrash({ phase: 'waiting', sample: null, frame: null, decoder: null, source: null, file: file ? { type: file.type || '', size: file.size ?? null } : null });
+    const onPhase = p => { markCrash({ phase: p, sample: samples }); if (mine()) setPhase(p); };
+    const onLandmarks = (lm, w, h) => {
+      samples++;
+      const at = Date.now();
+      if (at - marked >= CRASH_MARK_MS) { marked = at; markCrash({ phase: 'extracting', sample: samples, frame: [w, h] }); }
+      if (mine()) { setLandmarks(lm); setFrameSize([w, h]); }
+    };
+    try {
+      // A video chosen while the page is still hidden (back from the camera) waits for it.
+      await whenVisible({ signal: controller.signal });
+      release = watchInterruption(controller);
+      if (mine()) track('analysis_start', { lift });
+      wake = holdScreenAwake();
+      // An exercise the core does not offer is read by the universal engine, whose number is never shown as a counted
+      // result: refused, with its number offered as "Proposition de l'appli" only when the needed joints were seen on
+      // at least half the samples (universalProposal.js; counting research of 14 October 2026).
+      const output = isOffered(lift)
+        ? await analyzeCoreVideo(file, lift, { signal: controller.signal, onProgress: p => { if (mine()) setProgress(p); }, onPhase, onLandmarks,
+            onDecoder: d => markCrash({ decoder: d }), onSource: source => markCrash({ source }) })
+        : universalAsProposal(await analyzeUniversalVideo(file, lift, { signal: controller.signal, onProgress: p => { if (mine()) setProgress(p); }, onPhase, onLandmarks }), lift);
+      markCrash({ phase: 'result', sample: output.timestamps?.length ?? samples, frame: output.metadata ? [output.metadata.width, output.metadata.height] : null, decoder: output.metadata?.method || null });
+      // A beat at 100 %, then the result, as in the prototype; a run hidden meanwhile shows no count.
+      setProgress(100);
+      const settled = await settleRun(controller.signal, output, initialFile && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 380 : 0);
+      release();
+      // The Result screen saves the count once the user confirms it.
+      if (mine()) {
+        setResult(sample ? { ...settled, sample: true } : settled);
+        // Counted, or no rep found and the count asked for (Result.jsx, unsure), or refused.
+        track(settled.refused ? 'analysis_refused' : settled.count === 0 ? 'analysis_uncounted' : 'analysis_done', { lift });
+      }
+    } catch (e) {
+      if (e?.name !== 'AbortError') { markCrash({ phase: 'error', sample: samples, decoder: e?.decoder || null }); noteError(e, 'analysis'); }
+      if (isInterruption(controller.signal.reason)) { if (mine()) { setInterrupted(true); track('analysis_interrupted', { lift }); } }
+      else if (e.name === 'PartialReadError') { if (mine()) { setIncomplete({ read: e.read, expected: e.expected, decoder: e.decoder, disordered: e.disordered }); track('analysis_partial', { lift }); } }
+      else if (e.name !== 'AbortError' && mine()) { console.error('[analysis]', e); setError({ name: e.name || 'Error', message: e.message || 'failed', decoder: e.decoder || '' }); track('analysis_failed', { lift }); }
+    } finally { release(); wake(); if (mine()) abort.current = null; }
+  }
+
+  // Over the result, the replay or the report is the phase of the crash log (crashLog.js).
+  useEffect(() => { if (result) markCrash({ phase: overlay || 'result' }); }, [overlay, result]);
+
+  const refilm = onRefilm || onClose;
+  // A set the app could not read, typed by hand on the refused set's screen: no count of the app, no replay, no measure
+  // (Result.jsx, notRead; excellence hunt, 9 October 2026). notRead keeps what stopped the analysis, for the screen's
+  // words and its report: the error (or the model that did not start), the part read, or the interruption.
+  const byHand = kind => () => {
+    abort.current?.abort();
+    const notRead = kind === 'partial'
+      ? { kind, decoder: incomplete?.decoder || '', read: { read: incomplete?.read, expected: incomplete?.expected, disordered: !!incomplete?.disordered } }
+      : kind === 'error'
+        ? { kind: phase === 'model' ? 'model' : 'error', decoder: error?.decoder || '', failure: error ? `${error.name}: ${error.message}` : '' }
+        : { kind };
+    setResult({ refused: true, notRead, count: 0, reps: [], arm: null, confidence: null, imageLandmarks: [], metadata: {}, ...(sample ? { sample: true } : {}) });
+  };
+  function closeOverlay() {
+    if (overlayLeaving) return;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { setOverlay(null); return; }
+    setOverlayLeaving(true);
+    closeTimer.current = setTimeout(() => { setOverlay(null); setOverlayLeaving(false); }, 450);
+  }
+  function openOverlay(name) {
+    clearTimeout(closeTimer.current);
+    setOverlayLeaving(false);
+    setOverlay(name);
+  }
+  function openReport(savedN, savedId) {
+    setReportMeta({ count: savedN, id: savedId ?? null });
+    track('report_open', { lift });
+    openOverlay('report');
+  }
+
+  // The analysis, then the result (or what went wrong), crossfaded. A result waits on the analysis screen while the blind
+  // question is open; a set the app could not read (notRead) has no count to hold back, and the failure screens show at
+  // once, so a failed read never hides behind the question.
+  const holding = plan.ask && !blind;
+  const view = result && !(holding && !result.notRead) ? 'result' : interrupted ? 'interrupted' : incomplete ? 'incomplete' : error ? 'error' : 'watch';
+  return <>
+    <ScreenFade screenKey={view}>
+      {view === 'watch' && <Watch lift={lift} progress={progress} phase={phase} landmarks={landmarks} frameSize={frameSize} onSkip={() => { if (abort.current) track('analysis_cancelled', { lift }); abort.current?.abort(); refilm(); }}
+        blind={holding ? { onAnswer: n => setBlind(blindAnswer(n, plan.p)) } : null} />}
+      {view === 'error' && <AnalysisError lift={lift} phase={phase} failure={error} onClose={onClose} onRestart={() => analyze()} onRefilm={refilm} onByHand={sample ? undefined : byHand('error')} />}
+      {view === 'incomplete' && <AnalysisIncomplete lift={lift} read={incomplete.read} expected={incomplete.expected} disordered={incomplete.disordered} decoder={incomplete.decoder} onClose={onClose} onRestart={() => analyze()} onRefilm={refilm} onByHand={sample ? undefined : byHand('partial')} />}
+      {view === 'interrupted' && <AnalysisInterrupted lift={lift} onClose={onClose} onRestart={() => analyze()} onRefilm={refilm} onByHand={sample ? undefined : byHand('interrupted')} />}
+      {view === 'result' && <Result result={result} lift={lift} videoFile={file} covered={overlay && !overlayLeaving ? overlay : null} onClose={onClose} onReport={openReport} onReplay={result.notRead ? undefined : () => openOverlay('replay')} onNewSet={onNewSet} onChangeLift={onClose} onRefilm={refilm} planned={planned} blind={blind} onSaved={(n, sides, measures) => {
+        setSavedCount(n); setSavedSides(sides ?? null); setSavedMeasures(measures ?? null);
+        const cfg = readPerfectEmbedConfig();
+        if (cfg.embed && n > 0) {
+          postPerfectEmbedMessage({ type: 'perfect-wv:complete', lift, reps: n });
+        }
+      }} />}
+    </ScreenFade>
+    {view === 'result' && overlay === 'report' && <Report lift={lift} count={reportMeta.count ?? result.count} counted={result.count} arm={result.arm} reps={savedMeasures?.reps ?? []} setId={reportMeta.id} sides={savedSides} wave={savedMeasures?.wave ?? null} recounted={!!savedMeasures?.recounted} doubted={!!savedMeasures?.doubted} planned={planned} result={result} leaving={overlayLeaving} onBack={closeOverlay} />}
+    {view === 'result' && overlay === 'replay' && <Replay file={file} result={result} lift={lift} saved={savedCount} leaving={overlayLeaving} onBack={closeOverlay} />}
+  </>;
+}

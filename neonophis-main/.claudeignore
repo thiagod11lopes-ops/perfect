@@ -1,0 +1,41 @@
+# .claudeignore — files Claude should not modify or include in edits.
+# Format: gitignore-style globs. Comments allowed.
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Local-only Claude state
+.claude/settings.local.json
+.claude/cache/
+.claude/projects/
+
+# OS / editor cruft
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Build assets output (regeneratable from assets/src/)
+# Note: assets/ IS committed per CLAUDE.md §7.5 — but Claude shouldn't
+# hand-edit them; regenerate via scripts/build-assets.sh.
+assets/*.png
+assets/*.webp
+assets/*.ico
+assets/sprites/*
+
+# Logs
+*.log
+.vite/
+
+# User-private
+.env
+.env.*
+secrets/

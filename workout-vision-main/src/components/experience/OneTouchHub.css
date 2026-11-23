@@ -1,0 +1,224 @@
+/* OneTouchHub styles: sleek, friendly, accessible, non-intimidating */
+
+.wv-onetouch-hub {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  margin-top: var(--s-4);
+  width: 100%;
+}
+
+.wv-onetouch-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.wv-onetouch-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  padding: 10px 14px;
+  border-radius: var(--r-l);
+  border: 1px solid var(--hair-2);
+  background: linear-gradient(180deg, var(--bio-glow) 0%, var(--well) 100%);
+  color: var(--c-fg);
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--d-fast) var(--ease);
+  position: relative;
+  overflow: hidden;
+}
+
+.wv-onetouch-btn:hover {
+  border-color: var(--lamp-line);
+  background: linear-gradient(180deg, var(--bio-glow-strong) 0%, var(--well) 100%);
+  transform: translateY(-1px);
+}
+
+.wv-onetouch-btn:active {
+  transform: translateY(1px);
+}
+
+.wv-onetouch-ico {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--r-m);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--depth-1);
+  border: 1px solid var(--hair-2);
+  transition: all var(--d-fast) var(--ease);
+}
+
+.wv-onetouch-btn.is-lift .wv-onetouch-ico {
+  color: var(--c-accent);
+  background: var(--bio-glow);
+  border-color: var(--lamp-line);
+}
+
+.wv-onetouch-btn.is-mobility .wv-onetouch-ico,
+.wv-onetouch-btn.is-pro .wv-onetouch-ico {
+  color: var(--lamp-hi);
+  background: var(--bio-glow);
+  border-color: var(--lamp-line);
+}
+
+.wv-onetouch-btn.is-history .wv-onetouch-ico {
+  color: var(--bone);
+  background: var(--depth-2);
+  border-color: var(--hair-2);
+}
+
+.wv-onetouch-btn:hover .wv-onetouch-ico {
+  transform: scale(1.04);
+  border-color: var(--lamp-line-strong);
+}
+
+.wv-onetouch-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.wv-onetouch-title {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--c-fg);
+  line-height: 1.2;
+}
+
+.wv-onetouch-sub {
+  font-size: var(--fs-status);
+  color: var(--c-fg-muted);
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+
+.wv-onetouch-arrow {
+  width: 16px;
+  height: 16px;
+  color: var(--ash-2);
+  flex-shrink: 0;
+  transition: transform var(--d-fast) var(--ease), color var(--d-fast);
+}
+
+.wv-onetouch-btn:hover .wv-onetouch-arrow {
+  transform: translateX(2px);
+  color: var(--c-accent);
+}
+
+/* Category filter chips */
+.wv-onetouch-chips-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.wv-onetouch-chips-label {
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-fg-muted);
+}
+
+.wv-onetouch-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.wv-onetouch-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.wv-onetouch-chip {
+  flex: none;
+  min-height: 44px;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--hair-2);
+  background: var(--well);
+  color: var(--c-fg);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: all var(--d-fast) var(--ease);
+}
+
+.wv-onetouch-chip:hover {
+  border-color: var(--lamp-line);
+  color: var(--c-accent);
+  background: var(--bio-glow);
+}
+
+.wv-onetouch-search-launcher {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: var(--r-l);
+  border: 1px solid var(--hair-2);
+  background: var(--card-top);
+  color: var(--bone-2);
+  font-size: var(--fs-caption);
+  cursor: pointer;
+  transition: all var(--d-fast) var(--ease);
+  text-align: left;
+}
+
+.wv-onetouch-search-launcher:hover {
+  border-color: var(--lamp-line);
+  color: var(--bone);
+  background: var(--basalt);
+}
+
+.wv-onetouch-search-ph {
+  flex: 1;
+  color: var(--ash);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wv-onetouch-search-badge {
+  font-size: var(--fs-label);
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: var(--r-pill);
+  background: var(--hair-2);
+  color: var(--bone);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wv-onetouch-btn,
+  .wv-onetouch-ico,
+  .wv-onetouch-arrow,
+  .wv-onetouch-chip {
+    transition: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .wv-onetouch-modes {
+    grid-template-columns: 1fr;
+  }
+}

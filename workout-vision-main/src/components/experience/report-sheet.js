@@ -1,0 +1,531 @@
+// The words of the session report. The sheet on screen and the PDF both read
+// them from here, so what the visitor sees is what the reader receives.
+import { setOpener } from './set-opener';
+import { isShortIn, speedChange } from './set-account';
+import { decimal, partialIn, repTempo, setAverages, setTempo, timedReps } from './tempo';
+import { MEASURES_SHOWN, SPEED_CHANGE_SHOWN, UNVALIDATED_BIOMECHANICS_SHOWN, experimentalLabel } from './measures';
+import { sidesLines } from './sides-line';
+import { liftDefinition } from '../../lib/counting/core';
+import { jointName } from './lift-meta';
+import { referenceBand } from '../../lib/reference-ranges';
+import { PRO } from './pro-copy';
+import { analyzeMovementOptimization, analyzeContinuousBiomechanics } from '../../lib/coaching/movementOptimization';
+import { getExercise } from '../../lib/exercises/index';
+
+export { setTempo };
+
+const NBSP = '\u00A0';
+const clean = s => (s || '').normalize('NFC').replace(/\s+/g, ' ').trim();
+
+export const NAME_MAX = 60;
+export const NOTES_MAX = 1000;
+
+const MINUS = '\u2212';
+// One decimal, with the comma in French: 1,2 s.
+export { decimal } from './tempo';
+
+/**
+ * What a set measured, from its whole reps (a rep the recording cut is counted but
+ * not measured): the time under tension (the reps' lengths,
+ * pauses at the working end included, rests between reps not), and how the
+ * concentric speed changed from the first two reps to the last two. The concentric speed
+ * of a rep is its range over its concentric time, in degrees per second; the
+ * change is the share by which the mean of the last two differs from the mean of
+ * the first two (velocity loss within a set: Sánchez-Medina and González-Badillo,
+ * Med Sci Sports Exerc 2011, measured there on the bar). Fewer than four reps give
+ * no change.
+ */
+export function setMeasures(all) {
+  const reps = timedReps(all);
+  if (!reps.length) return null;
+  const tut = reps.reduce((sum, r) => sum + (r.endTime - r.startTime), 0);
+  return { tut, speedChange: speedChange(all) };
+}
+
+
+/**
+ * What each measure means, in plain words, under the per-rep table on the result screen, the report and the PDF
+ * (David's demo to a physiotherapist, 5 October: "it's physics for most people"). Each term is the table's own column
+ * heading, so the eye goes from one to the other; the tempo is shown, four phases with their seconds, not described.
+ * It describes, it never judges: every measure stays experimental (measures.js). Copy approved by David on 9 October 2026 (R10).
+ */
+export function measureGuide(fr) {
+  return {
+    title: fr ? 'Lire les chiffres' : 'Reading the numbers',
+    tempo: {
+      term: 'Tempo',
+      text: fr ? 'La durée de chaque phase de la répétition, en secondes, dans cet ordre.' : 'How long each phase of the rep lasts, in seconds, in this order.',
+      example: fr ? [['2', 'descente'], ['1', 'en bas'], ['1', 'montée'], ['0', 'en haut']] : [['2', 'down'], ['1', 'bottom'], ['1', 'up'], ['0', 'top']],
+    },
+    items: [
+      { term: fr ? 'Amplitude' : 'Range', text: fr ? 'De combien de degrés l’articulation suivie s’ouvre et se referme.' : 'How many degrees the tracked joint opens and closes.' },
+      { term: fr ? 'Pic' : 'Peak', text: fr ? 'La vitesse la plus élevée du mouvement, en degrés par seconde.' : 'The fastest speed of the movement, in degrees per second.' },
+      { term: fr ? 'Moy.' : 'Mean', text: fr ? 'La vitesse moyenne du mouvement, en degrés par seconde.' : 'The average speed of the movement, in degrees per second.' },
+      { term: fr ? 'Temps sous tension' : 'Time under tension', text: fr ? 'La durée cumulée des répétitions, sans les repos entre elles.' : 'The total time of the reps, without the rests between them.', tut: true },
+    ],
+  };
+}
+
+/** The same key as plain lines, one per measure. */
+export function measureLegend(fr) {
+  const g = measureGuide(fr), c = fr ? `${NBSP}: ` : ': ';
+  return [`${g.tempo.term}${c}${g.tempo.text} ${g.tempo.example.map(([n, l]) => `${n} ${l}`).join(', ')}.`, ...g.items.map(i => `${i.term}${c}${i.text}`)];
+}
+
+/**
+ * The per-rep table as the report prints it: Rep | Tempo | Range | Peak | Mean (peak and mean
+ * angular speed in °/s). The result screen shows the same rows to an expert (level.js).
+ * After a correction the rows are the marks the app detected, not the reps the user saved, so the first
+ * column is headed Repère / Mark on the report and on the result screen alike (third audit C11, 3 October).
+ */
+export function repTable({ reps, first, fr, corrected = false, doubted = false }) {
+  const allReps = reps || [];
+  const liftFirst = first || 'concentric';
+  // Short rep: range under 85% of the set's median, by the rule the result screen and the
+  // opener use (set-account.js), so the three never disagree on an even number of reps. None on a set the body check
+  // flagged (doubted), as set-account.js judges none there.
+  const isShort = doubted ? () => false : isShortIn(reps);
+  const partial = partialIn(reps);
+  // Per-rep tempo in coach notation: moving phases (lowering, lifting) to the tenth, so a 0.6 s
+  // lift reads 0,6 and not 1; pauses (bottom, top) in whole seconds.
+  const phase = v => decimal(v, fr);
+  const pause = v => String(Math.round(v));
+  const tempoStr = t => [phase(t.lowering), pause(t.bottom), phase(t.lifting), pause(t.top)].join('-');
+  const rows = allReps.map((r, i) => {
+    if (r.clipped) return [String(i + 1), '…', `${Math.round(r.romDegrees)}°`, '…', '…'];
+    const range = `${Math.round(r.romDegrees)}°${isShort(r) ? `${NBSP}▾` : ''}`;
+    if (partial(r)) return [String(i + 1), '…', range, '…', '…'];
+    const nextStart = i + 1 < allReps.length ? allReps[i + 1].startTime : null;
+    const t = repTempo(r, nextStart, liftFirst);
+    return [String(i + 1), tempoStr(t), range, String(Math.round(r.peakSpeed || 0)), String(Math.round(r.meanSpeed || 0))];
+  });
+  const columns = fr ? ['Rép.', 'Tempo', 'Amplitude', 'Pic', 'Moy.'] : ['Rep', 'Tempo', 'Range', 'Peak', 'Mean'];
+  if (corrected) columns[0] = fr ? 'Repère' : 'Mark';
+  return { columns, rows };
+}
+
+// The concentric speed change (setMeasures) as the report writes it; '' when there is none.
+function speedLine(c, fr) {
+  if (c === null || c === undefined) return '';
+  const colon = fr ? `${NBSP}: ` : ': ';
+  const signed = c < 0 ? `${MINUS}${-c}` : c > 0 ? `+${c}` : '0';
+  return fr ? `Vitesse concentrique${colon}${signed}${NBSP}% du début à la fin` : `Concentric speed${colon}${signed}% from start to end`;
+}
+
+/** The report's line on the set's concentric speed change, or '' under four whole reps. */
+export const speedChangeLine = (reps, fr) => speedLine(setMeasures(reps)?.speedChange ?? null, fr);
+
+/**
+ * @param {object} o
+ * @param {'fr'|'en'} o.lang
+ * @param {Date} o.date          when the set was recorded
+ * @param {string} [o.name]      the user's name, optional
+ * @param {''|'alone'|'friend'|'coach'} [o.context]  whom the user trained with, if they said
+ * @param {string} [o.partner]   the friend's or the coach's name, optional
+ * @param {''|'beginner'|'intermediate'|'expert'} [o.level]
+ * @param {string} o.notes
+ * @param {string} o.liftName
+ * @param {number} o.count       the number the visitor confirmed or corrected
+ * @param {number} [o.counted]   the number the app counted, when it differs
+ * @param {'left'|'right'} [o.arm]
+ * @param {'elbow'|'shoulder'|'knee'|'hip'} [o.joint]  the joint that counts the lift (core.ts)
+ * @param {'concentric'|'eccentric'} [o.first]  which phase leaves the rest end
+ * @param {Array} [o.reps]       the app's reps with step 3c boundaries
+ * @param {object} [o.previousSet]  the previous saved set of the same lift
+ * @param {number} [o.previousSet.count]
+ * @param {Array} [o.previousSet.reps]
+ * @param {Date} [o.previousSet.date]
+ * @param {object} [o.planned]  the coach's target, for a set filmed from a programme (programme.js, plannedOf)
+ * @param {boolean} [o.proposed]  a refused set whose count is the app's proposal, confirmed as it stood
+ * @param {'psc'|'universal'|null} [o.proposedBy]  whose proposal: the core's on a refused set, or the universal engine's
+ *   for an exercise the core does not offer (universalProposal.js)
+ * @param {boolean} [o.recounted]  a corrected count whose reps were found again (coreAnalysis.js recountTo): the rows
+ *   are the person's reps, not the app's marks
+ * @param {boolean} [o.doubted]  the body check flagged the joint the measures are read on (saved-set.js keepsMeasures)
+ */
+
+export function reportSheet({ lang, date, name, context, partner, level, notes, liftName, count, counted, arm, joint = 'elbow', source, afterRefusal = false, proposed = false, proposedBy = null, reps, first, previousSet, sides = null, lift = '', wave = null, measures: shown = MEASURES_SHOWN, planned = null, rpe = null, pain = null, recounted = false, doubted = false, optimization = null, result = null, biomechanics = UNVALIDATED_BIOMECHANICS_SHOWN }) {
+  const fr = lang === 'fr';
+  const colon = fr ? `${NBSP}: ` : ': ';
+  const sec = x => `${decimal(x, fr)}${NBSP}s`;
+  const measures = setMeasures(reps);
+  const wholeReps = (reps || []).filter(r => !r.clipped);
+  const allReps = reps || [];
+  const liftFirst = first || 'concentric';
+
+  // Without validated measures (measures.js): no per-rep table, no short-rep mark, and of the
+  // summary only the previous set's count.
+  const hasShort = shown && !doubted && allReps.some(isShortIn(reps));
+  const hasPartial = shown && allReps.some(partialIn(reps));
+  // After a correction the rows are the marks the app detected, not the reps the user saved (repTable), unless the set
+  // was read again and the person's reps found (recounted).
+  const { columns, rows } = shown ? repTable({ reps, first: liftFirst, fr, corrected: counted != null && counted !== count && !recounted, doubted }) : { columns: [], rows: [] };
+
+  // Summary: one item per line, as a client who is not a coach reads it (Luc, 29 September).
+  const summary = [];
+  if (!shown && previousSet && Number.isFinite(previousSet.count)) {
+    const prevDate = previousSet.date instanceof Date ? previousSet.date : new Date(previousSet.date);
+    const day = prevDate.toLocaleDateString(fr ? 'fr-FR' : 'en-GB', { day: 'numeric', month: 'short' });
+    const currDate = date instanceof Date ? date : new Date(date);
+    const sameDay = date && prevDate && (prevDate.getFullYear() === currDate.getFullYear() && prevDate.getMonth() === currDate.getMonth() && prevDate.getDate() === currDate.getDate());
+    const labelFr = sameDay ? 'Série précédente (ce jour)' : `Série du ${day}`;
+    const labelEn = sameDay ? 'Previous set (earlier today)' : `Set of ${day}`;
+    summary.push(fr ? `${labelFr}${colon}${previousSet.count}${NBSP}rép.` : `${labelEn}${colon}${previousSet.count}${NBSP}${previousSet.count === 1 ? 'rep' : 'reps'}`);
+  }
+  if (measures && shown) {
+    summary.push((fr ? 'Temps sous tension' : 'Time under tension') + colon + sec(measures.tut));
+    const speed = SPEED_CHANGE_SHOWN ? speedLine(measures.speedChange, fr) : '';
+    if (speed) summary.push(speed);
+
+    // Set tempo: average of each phase across whole reps (setTempo, which the spreadsheet uses too).
+    const tempo = setTempo(reps, liftFirst);
+    if (tempo) summary.push(`Tempo${colon}${tempo}`);
+
+    // Duration change: average of last two minus average of first two. The same first-two against
+    // last-two comparison as the speed change, from the same boundaries: unsaid with it (SPEED_CHANGE_SHOWN).
+    if (SPEED_CHANGE_SHOWN && wholeReps.length >= 4) {
+      const dur = r => r.endTime - r.startTime;
+      const firstAvg = (dur(wholeReps[0]) + dur(wholeReps[1])) / 2;
+      const lastAvg = (dur(wholeReps[wholeReps.length - 2]) + dur(wholeReps[wholeReps.length - 1])) / 2;
+      const diff = lastAvg - firstAvg;
+      const sign = diff < -0.05 ? MINUS : diff > 0.05 ? '+' : '';
+      summary.push(fr
+        ? `Durée${colon}${sign}${decimal(Math.abs(diff), fr)}${NBSP}s du début à la fin`
+        : `Duration${colon}${sign}${decimal(Math.abs(diff), false)}${NBSP}s from start to end`);
+    }
+
+    // Left against right, for a set filmed from the front (sides-line.js): the two ranges, then what a gap means.
+    const lr = sidesLines(sides, fr, lift);
+    if (lr) summary.push(lr.line, lr.note);
+
+    // The lines added on 11-13 October 2026 are withdrawn (honesty audit of 14 October 2026, CORE-15, CORE-18): partial
+    // reps, a bilateral symmetry score and its advice, a trunk shift, consistency, SPARC, squat depth, valgus, lockout,
+    // trapezius and peak-angle checks, joint loads and work from a fixed 75 kg body, a NIOSH "spinal compression" no
+    // caller fed, a "certificate of conformity" and VBT. None was measured against known truth (R8); the sheet goes to a
+    // coach or a physiotherapist. The person's own pain and effort are below, outside the measures, as theirs.
+
+    // Previous set comparison.
+    if (previousSet && previousSet.reps?.length) {
+      const prevWhole = previousSet.reps.filter(r => !r.clipped);
+      if (prevWhole.length) {
+        const prevDate = previousSet.date instanceof Date ? previousSet.date : new Date(previousSet.date);
+        const day = prevDate.toLocaleDateString(fr ? 'fr-FR' : 'en-GB', { day: 'numeric', month: 'short' });
+        const avg = setAverages(previousSet.reps), prevAvgRange = Math.round(avg.rom), prevAvgDur = avg.dur;
+        const durFr = prevAvgDur === null ? '' : `, durée moy. ${decimal(prevAvgDur, fr)}${NBSP}s`, durEn = prevAvgDur === null ? '' : `, avg duration ${decimal(prevAvgDur, false)}${NBSP}s`;
+        const currDate = date instanceof Date ? date : new Date(date);
+        const sameDay = date && prevDate && (prevDate.getFullYear() === currDate.getFullYear() && prevDate.getMonth() === currDate.getMonth() && prevDate.getDate() === currDate.getDate());
+        const labelFr = sameDay ? 'Série précédente (ce jour)' : `Série du ${day}`;
+        const labelEn = sameDay ? 'Previous set (earlier today)' : `Set of ${day}`;
+        summary.push(fr
+          ? `${labelFr}${colon}${previousSet.count}${NBSP}rép., amplitude moy. ${prevAvgRange}°${durFr}`
+          : `${labelEn}${colon}${previousSet.count}${NBSP}${previousSet.count === 1 ? 'rep' : 'reps'}, avg range ${prevAvgRange}°${durEn}`);
+      }
+    }
+  }
+
+  // The set's two figures, set like the count (David's iPhone, 5 October: the report read as a list of grey lines):
+  // time under tension, and the set's tempo as the result screen and the spreadsheet write it (setTempo, whole
+  // seconds), so the pause between reps is averaged over the gaps that exist (audit of 6 October).
+  const stats = [];
+  if (measures && shown) {
+    stats.push([fr ? 'Temps sous tension' : 'Time under tension', sec(measures.tut)]);
+    const tempo = setTempo(reps, liftFirst);
+    if (tempo) stats.push([fr ? 'Tempo moyen' : 'Average tempo', tempo]);
+  }
+  // What the stats do not say, each its own line (left and right, the previous set, speed changes when shown).
+  const statLabels = [fr ? 'Temps sous tension' : 'Time under tension', 'Tempo'];
+  const more = summary.filter(line => !statLabels.some(l => line.startsWith(`${l}${colon}`)));
+  // How the count was made, as labelled details under it, like the people above it: who counted, and the limb followed.
+  const details = [];
+  // A universal proposal (an exercise the core does not offer, universalProposal.js) says why the app proposed rather than
+  // counted, on the sheet and the PDF as in the history and the file (honesty pass, second round, 14 October 2026: the
+  // words sat in `corrected`, which no screen prints). Awaiting David's approval of the words (R10).
+  if (source === 'manual' && afterRefusal && proposed && proposedBy === 'universal') details.push([fr ? 'Saisie' : 'Entry', fr ? 'proposée par l’appli, qui ne compte pas encore cet exercice, puis confirmée par la personne' : 'proposed by the app, which does not count this exercise yet, then confirmed by the person']);
+  // The app's proposal on a refused set, confirmed as it stood (History.jsx; French approved by David on 9 October 2026, R10).
+  else if (source === 'manual' && afterRefusal && proposed) details.push([fr ? 'Saisie' : 'Entry', fr ? 'proposée par l’appli, confirmée par la personne' : 'proposed by the app, confirmed by the person']);
+  else if (source === 'manual' && afterRefusal) details.push([fr ? 'Saisie' : 'Entry', fr ? 'à la main, l’appli n’a pas pu compter' : 'by hand, the app could not count']);
+  else if (counted != null && counted !== count) details.push([fr ? 'Compté par l’appli' : 'Counted by the app', String(counted)], [fr ? 'Corrigé' : 'Corrected', String(count)]);
+  // A set the body check flagged, measured once the person answered (saved-set.js keepsMeasures; 24 October 2026): its
+  // measures are read on a joint the check doubted, said in the third person as the sheet's other details. Written under
+  // David's delegation of French copy, 20 October 2026 (R10).
+  if (doubted && shown && (reps || []).length) details.push([fr ? 'À prendre avec précaution' : 'Read with caution', fr ? `l’angle ${jointName(joint, true)} ne bougeait pas comme le reste du corps` : `the ${jointName(joint, false)} angle did not move like the rest of the body`]);
+  if (arm === 'left' || arm === 'right') {
+    const limb = joint === 'knee' ? (fr ? 'Jambe suivie' : 'Leg tracked') : joint === 'hip' ? (fr ? 'Côté suivi' : 'Side tracked') : (fr ? 'Bras suivi' : 'Arm tracked');
+    details.push([limb, arm === 'left' ? (fr ? 'gauche' : 'left') : fr ? (joint === 'knee' ? 'droite' : 'droit') : 'right']);
+  }
+  // The person's own pain and effort, as they gave them on the form, always printed (a typed, refused or flagged set has
+  // no measure, but the physiotherapist still needs these), labelled as theirs and never graded (honesty audit of 14
+  // October 2026, CORE-20 and the missed item on report-sheet.js:339). The sheet is read by a coach or a
+  // physiotherapist, so it names the person in the third person, as its "confirmée par la personne" does: "selon vous"
+  // would credit the rating to its reader (second round of the same day). Awaiting David's approval of the words (R10).
+  const outOf10 = v => (Number.isFinite(v) ? (fr ? `${v} sur 10` : `${v} out of 10`) : null);
+  const own = [];
+  if (outOf10(pain)) own.push([fr ? 'Douleur, selon la personne' : 'Pain, as the person rated it', outOf10(pain)]);
+  if (outOf10(rpe)) own.push([fr ? 'Effort perçu (RPE), selon la personne' : 'Perceived exertion (RPE), as the person rated it', outOf10(rpe)]);
+
+  // Optimization & Coach's Prescription (PR #296 / Coach Prescription Engine). It rests on the readings that are off
+  // in production (measures.js, UNVALIDATED_BIOMECHANICS_SHOWN): without them the sheet carries none of it, and the
+  // report and its PDF print no prescription, metric, cue or .bvh file (card 013). Status: not validated.
+  let opt = biomechanics ? optimization : null;
+  if (!opt && biomechanics && shown && lift && ((allReps.length > 0) || (wave?.a?.length > 0 && wave?.t?.length > 0) || (result?.angles?.length > 0) || count > 0)) {
+    try {
+      if (result && Array.isArray(result.angles) && result.angles.length > 0) {
+        const fps = 30;
+        const timestamps = result.timestamps || result.angles.map((_, i) => i / fps);
+        opt = analyzeContinuousBiomechanics(result.angles, timestamps, lift, fr);
+      } else if (allReps.length > 0) {
+        opt = analyzeMovementOptimization(allReps, lift, fr);
+        if (wave?.a?.length > 0 && wave?.t?.length > 0) {
+          try {
+            const cont = analyzeContinuousBiomechanics(wave.a, wave.t, lift, fr);
+            if (cont.stickingPoints?.length && (!opt.stickingPoints || !opt.stickingPoints.length)) {
+              opt.stickingPoints = cont.stickingPoints;
+              opt.stickingPointSummary = cont.stickingPointSummary;
+            }
+            if (cont.formDistortionScore !== null && (opt.formDistortionScore === undefined || opt.formDistortionScore === null)) {
+              opt.formDistortionScore = cont.formDistortionScore;
+              opt.pathEfficiencyPercent = cont.pathEfficiencyPercent;
+            }
+            if (cont.bvhData && !opt.bvhData) {
+              opt.bvhData = cont.bvhData;
+            }
+          } catch {}
+        }
+      } else if (wave?.a?.length > 0 && wave?.t?.length > 0) {
+        opt = analyzeContinuousBiomechanics(wave.a, wave.t, lift, fr);
+      } else if (count > 0) {
+        const fallbackReps = Array.from({ length: Number(count) }, (_, i) => ({ rep: i + 1, range: 90, duration: 2.0 }));
+        opt = analyzeMovementOptimization(fallbackReps, lift, fr);
+      }
+      if (opt && !opt.targetMuscles) {
+        const ex = getExercise(lift);
+        if (ex?.primary_muscles?.length) {
+          opt.targetMuscles = ex.primary_muscles.map(m => m.replace(/_/g, ' '));
+        }
+      }
+    } catch {
+      opt = null;
+    }
+  }
+
+  return {
+    fr,
+    details,
+    // What the person said of the set (pain, effort), as [label, value] pairs, under how the count was made.
+    own,
+    stats,
+    more,
+    // Movement optimization, Coach's Prescription & detailed biomechanics
+    optimization: opt,
+    optimizationMetrics: buildOptimizationMetrics(opt, fr),
+    liftKey: lift,
+    // No brand: the report names no app (David, 29 September).
+    brand: '',
+    date: date.toLocaleDateString(fr ? 'fr-FR' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
+    title: fr ? 'Rapport de séance' : 'Session report',
+    // One sentence that sums up the set (set-opener.js); none on an unknown count. The result screen carries none: its numeral and account say it.
+    // On a set the body check flagged, the count alone: no rep judged short from a doubted angle (set-account.js).
+    opener: setOpener({ reps, fr, count, counted, measures: shown && !doubted }) || '',
+    // Only what the user filled in (step 1, 29 September 2026): no coach is assumed.
+    people: people({ fr, name, context, partner, level }),
+    count: String(count),
+    word: fr ? (count <= 1 ? 'répétition' : 'répétitions') : (count === 1 ? 'rep' : 'reps'),
+    lift: liftName,
+    // The coach's target beside the count, for a set filmed from a programme (Espace pro, 6 October): "Prévu : 3 × 10".
+    planned: plannedLine(planned, fr),
+    // A set the app refused and the person typed (WP1.6): said so where a correction would be.
+    // A universal proposal says why the app proposed rather than counted: it does not count the exercise yet (awaiting
+    // David's approval of the words, R10).
+    corrected: source === 'manual' && afterRefusal && proposed && proposedBy === 'universal'
+      ? (fr ? 'Proposé par l’appli, qui ne compte pas encore cet exercice, puis confirmé à la main.' : 'Proposed by the app, which does not count this exercise yet, then confirmed by hand.')
+      : source === 'manual' && afterRefusal && proposed
+      ? (fr ? 'Proposé par l’appli, qui n’a pas bien vu le mouvement, puis confirmé à la main.' : 'Proposed by the app, which did not see the movement clearly, then confirmed by hand.')
+      : source === 'manual' && afterRefusal
+      ? (fr ? 'Saisi à la main : l’appli n’a pas pu compter cette série.' : 'Typed by hand: the app could not count this set.')
+      : counted != null && counted !== count
+      ? (fr ? `Compté par l’appli${colon}${counted}. Corrigé${colon}${count}.` : `Counted by the app${colon}${counted}. Corrected${colon}${count}.`)
+      : '',
+    arm: arm === 'left' || arm === 'right'
+      // The tracked limb follows the joint that counts the lift: arm, leg (knee) or side (hip).
+      ? (joint === 'knee' ? (fr ? 'Jambe suivie' : 'Leg tracked') : joint === 'hip' ? (fr ? 'Côté suivi' : 'Side tracked') : (fr ? 'Bras suivi' : 'Arm tracked'))
+        + colon + (arm === 'left' ? (fr ? 'gauche' : 'left') : fr ? (joint === 'knee' ? 'droite' : 'droit') : 'right')
+      : '',
+    // Tempo replaces time and phases; peak and mean angular speed in °/s.
+    columns,
+    rows,
+    summary,
+    shortRepNote: hasShort ? (fr ? '▾ amplitude courte' : '▾ short rep') : '',
+    // The measured angle over the set (wave.js), as the set kept it; with the measures only (measures.js).
+    wave: shown && wave?.t?.length > 1 && allReps.length ? { t: wave.t, a: wave.a, reps: allReps, rest: liftDefinition(lift)?.rest ?? 'low', first: liftFirst, jointWord: jointName(joint, fr), reference: referenceBand(lift, { joint: liftDefinition(lift)?.joint }) } : null,
+    // The plain-words key to the table and the summary, wherever they are shown.
+    guide: shown && rows.length > 0 ? measureGuide(fr) : null,
+    // A rep tempo.js does not time (partialIn): said untimed, not "partial", a word for a detection the app has not
+    // measured against labels (honesty pass, second round, 14 October 2026). Awaiting David's approval (R10).
+    partialRepNote: hasPartial ? (fr ? `…${NBSP}: répétition non chronométrée` : '…: rep not timed') : '',
+    // Beside every measure printed, while none is validated (measures.js).
+    experimental: shown && (rows.length > 0 || (measures && summary.length > 0)) ? experimentalLabel(fr) : '',
+    notesLabel: 'Notes',
+    notes: (notes || '').normalize('NFC').replace(/\r\n?/g, '\n').trim(),
+    // The report names no app (David, 29 September: the name is not final, and the tool spreads by being useful).
+    foot: '',
+  };
+}
+
+/**
+ * Builds the detailed biomechanics metrics array for the PDF and sheet preview.
+ * Displays only genuinely measured metrics with zero invented fallbacks.
+ */
+export function buildOptimizationMetrics(opt, fr) {
+  if (!opt) return [];
+  const metrics = [
+    {
+      label: fr ? 'Score d’amplitude (ROM)' : 'ROM Stretch Score',
+      val: `${opt.romScore}%`,
+      sub: fr ? `Moyenne\u00A0: ${opt.averageRomDeg}°` : `Average: ${opt.averageRomDeg}°`,
+      fillPct: Math.min(100, opt.romScore),
+    },
+    {
+      label: fr ? 'Contrôle & tempo' : 'Control & Tempo',
+      val: `${opt.controlIndex}%`,
+      sub: fr ? `Excentrique\u00A0: ${opt.averageEccentricSec}\u00A0s` : `Eccentric: ${opt.averageEccentricSec}\u00A0s`,
+      fillPct: Math.min(100, opt.controlIndex),
+    },
+    {
+      label: fr ? 'Temps sous tension (TUT)' : 'Time Under Tension (TUT)',
+      val: `${opt.timeUnderTensionSec}\u00A0s`,
+      sub: fr ? `Cadence\u00A0: ${opt.tempoCadence}` : `Tempo: ${opt.tempoCadence}`,
+      fillPct: Math.min(100, Math.max(15, opt.timeUnderTensionSec * 3)),
+    },
+  ];
+
+  if (opt.formDistortionScore !== null && opt.formDistortionScore !== undefined) {
+    metrics.push({
+      label: fr ? 'Fidélité de trajectoire (expérimental)' : 'Path Fidelity (experimental)',
+      val: `${Math.round(Math.max(0, 1 - opt.formDistortionScore) * 100)}%`,
+      sub: opt.pathEfficiencyPercent !== null && opt.pathEfficiencyPercent !== undefined
+        ? (fr ? `Efficacité axiale\u00A0: ${opt.pathEfficiencyPercent}%` : `Axial efficiency: ${opt.pathEfficiencyPercent}%`)
+        : '-',
+      fillPct: Math.round(Math.max(10, Math.min(100, (1 - opt.formDistortionScore) * 100))),
+    });
+  }
+
+  if (opt.hypertrophyReport) {
+    metrics.push({
+      label: fr ? 'Tension d’étirement' : 'Stretch Hypertrophy',
+      val: `${opt.hypertrophyReport.avgStretchScore}%`,
+      sub: opt.hypertrophyReport.bounceCount === 0
+        ? (fr ? 'Inversion contrôlée sans rebond' : 'Controlled reversal, zero bounce')
+        : (fr ? `${opt.hypertrophyReport.bounceCount} rebond(s) d’élan détecté(s)` : `${opt.hypertrophyReport.bounceCount} momentum bounce(s) detected`),
+      fillPct: Math.min(100, Math.max(10, opt.hypertrophyReport.avgStretchScore)),
+    });
+  }
+
+  return metrics;
+}
+
+/**
+ * A detail of how the count was made too long for a third of the sheet ("proposée par l'appli, confirmée par la
+ * personne"): set across the row on the sheet (Report.jsx, is-wide) and in the PDF (report-pdf.js), not wrapped into a
+ * third with two thirds empty (honesty pass, second round, 14 October 2026). Layout only.
+ */
+export const wideDetail = value => String(value).length > 24;
+
+/**
+ * The set as a JSON file (Report.jsx, "Mesures de la série"; honesty audit of 14 October 2026, CORE-15): every value says
+ * where it comes from, the app's count and its experimental per-rep measures apart from what the person confirmed or
+ * typed. No derived metric the app cannot measure (the withdrawn symmetry, consistency, SPARC, form checks, loads,
+ * certificate and VBT), no partial rep, no landmark. Second round of the same day: the sources are in the person's
+ * language; the reps' values are rounded as the screen shows them (whole degrees and degrees per second, tenths of a
+ * second), not to fourteen decimals a reader would take for precision; a set with no measured rep says none (null); left
+ * and right are exported only where the sheet prints them (sidesLines: this lift, the current rule), never a comparison
+ * the app withdrew. The French sources await David's approval (R10).
+ */
+export function measuresFile({ fr, lift, date, count, counted = null, source, afterRefusal = false, proposed = false, proposedBy = null, reps = null, sides = null, planned = null, person = {}, doubted = false, joint = 'elbow' }) {
+  const app = counted ?? null;
+  const typed = source === 'manual' && afterRefusal;
+  const tr = (frText, enText) => (fr ? frText : enText);
+  const how = typed
+    ? (proposed && proposedBy === 'universal'
+      ? tr('proposé par l’appli, qui ne compte pas encore cet exercice, puis confirmé par la personne', 'proposed by the app, which does not count this exercise yet, then confirmed by the person')
+      : proposed
+        ? tr('proposé par l’appli, qui n’a pas pu compter la série, puis confirmé par la personne', 'proposed by the app, which could not count the set, then confirmed by the person')
+        : tr(`saisi par la personne${NBSP}: l’appli n’a pas pu compter la série`, 'typed by the person; the app could not count the set'))
+    : app !== null && app !== count ? tr('corrigé par la personne', 'corrected by the person') : tr('compté par l’appli, confirmé par la personne', 'counted by the app, confirmed by the person');
+  const tenth = v => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
+  const whole = v => (Number.isFinite(v) ? Math.round(v) : null);
+  // A rep the sheet does not time (filmed in part, or under tempo.js's partialIn rule) has no tempo and no speed here
+  // either, as in repTable ('…'); every key names its unit, the speeds being joint angles per second, not m/s (honesty
+  // pass, second round, 14 October 2026: the file held what the sheet withholds, unitless).
+  const untimed = partialIn(reps);
+  const values = (reps || []).map(r => {
+    const timed = !r.clipped && !untimed(r);
+    return {
+      index: r.index ?? null, startSec: tenth(r.startTime), endSec: tenth(r.endTime), romDegrees: whole(r.romDegrees),
+      concentricSec: timed ? tenth(r.concentricSec) : null, eccentricSec: timed ? tenth(r.eccentricSec) : null,
+      peakDegPerSec: timed ? whole(r.peakSpeed) : null, meanDegPerSec: timed ? whole(r.meanSpeed) : null,
+      ...(r.side ? { side: r.side } : {}), ...(r.clipped ? { clipped: true } : !timed ? { timed: false } : {}),
+    };
+  });
+  const lr = sidesLines(sides, fr, lift) ? sides : null;
+  const p = person || {};
+  // A set the body check flagged says so beside each block measured on the doubted joint, its reps and its left
+  // against right, as the sheet does above all its measures (24 October 2026).
+  const caution = doubted ? { caution: tr(`à prendre avec précaution${NBSP}: l’angle ${jointName(joint, true)} ne bougeait pas comme le reste du corps`, `read with caution: the ${jointName(joint, false)} angle did not move like the rest of the body`) } : {};
+  return {
+    format: 'workoutvision-set-measures/1',
+    lift,
+    date: (date instanceof Date ? date : new Date(date)).toISOString(),
+    count: { value: count, source: how },
+    countedByApp: app !== null && !typed ? { value: app, source: tr('compté par l’appli', 'counted by the app') } : null,
+    reps: values.length ? { source: tr('mesuré par l’appli sur la vidéo, expérimental, non validé', 'measured by the app on the video, experimental, not validated'), ...caution, values } : null,
+    sides: lr ? { source: tr('mesuré par l’appli, série filmée de face seulement, expérimental', 'measured by the app, front view only, experimental'), ...caution, value: { left: lr.left, right: lr.right, gapPercent: Math.abs(Math.round(lr.si)) } } : null,
+    planned: planned ? { source: tr('le programme du coach', 'the coach’s programme'), value: planned } : null,
+    person: { source: tr('saisi par la personne sur le formulaire du rapport', 'typed by the person on the report form'), name: p.name || null, context: p.context || null, partner: p.partner || null, level: p.level || null, pain: p.pain ?? null, rpe: p.rpe ?? null, notes: p.notes || null },
+  };
+}
+
+// "Prévu : 3 × 10" (pro-copy.js), or '' for a set saved outside a programme or a target the set does not hold whole.
+function plannedLine(planned, fr) {
+  const ok = n => Number.isInteger(n) && n > 0;
+  if (!planned || !ok(planned.sets) || !ok(planned.reps)) return '';
+  return PRO[fr ? 'fr' : 'en'].planned(`${planned.sets}${NBSP}×${NBSP}${planned.reps}`);
+}
+
+const CONTEXT = {
+  alone: ['En solo', 'Alone'],
+  friend: ['En binôme', 'With a friend'],
+  coach: ['Avec un coach', 'With a coach'],
+  physio: ['Séance kiné', 'Physiotherapy'],
+};
+const PARTNER = {
+  friend: ['Partenaire', 'Friend'],
+  coach: ['Coach', 'Coach'],
+  physio: ['Kinésithérapeute', 'Physiotherapist'],
+};
+const LEVEL = { beginner: ['Débutant', 'Beginner'], intermediate: ['Intermédiaire', 'Intermediate'], expert: ['Confirmé', 'Expert'] };
+
+/** The sheet's people and level, as [label, value] pairs, in the order the form asks for them. */
+function people({ fr, name, context, partner, level }) {
+  const k = fr ? 0 : 1, out = [];
+  if (clean(name)) out.push([fr ? 'Nom' : 'Name', clean(name)]);
+  if (CONTEXT[context]) out.push([fr ? 'Entraînement' : 'Training', CONTEXT[context][k]]);
+  if (PARTNER[context] && clean(partner)) out.push([PARTNER[context][k], clean(partner)]);
+  if (LEVEL[level]) out.push([fr ? 'Niveau' : 'Level', LEVEL[level][k]]);
+  return out;
+}
+
+// An ASCII file name anyone can read in any mail or chat: rapport-seance-camille-martin-2026-09-26.pdf
+const LETTERS = { æ: 'ae', œ: 'oe', ø: 'o', ß: 'ss', ł: 'l', đ: 'd', ð: 'd', þ: 'th', ı: 'i' };
+/** A name as a file name's part: ASCII letters and digits, words joined by hyphens, at most about 40 characters. */
+export function fileSlug(name) {
+  let slug = clean(name).toLowerCase().replace(/[æœøßłđðþı]/g, c => LETTERS[c])
+    .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (slug.length > 40) { const cut = slug.slice(0, 41).lastIndexOf('-'); slug = slug.slice(0, cut > 0 ? cut : 40); }
+  return slug;
+}
+export function reportFileName({ lang, date, name }) {
+  const slug = fileSlug(name);
+  const pad = n => String(n).padStart(2, '0');
+  const day = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return [lang === 'fr' ? 'rapport-seance' : 'session-report', slug, day].filter(Boolean).join('-') + '.pdf';
+}

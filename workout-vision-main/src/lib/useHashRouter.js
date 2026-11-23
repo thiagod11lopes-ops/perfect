@@ -1,0 +1,130 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { showUnmeasuredRoutes } from './buildFlags';
+
+const CORE_PAGES = new Set([
+  'dashboard', 'analyze', 'exercises', 'history', 'film', 'live', 'about', 'comptage', 'guide-collecte',
+  'pro', 'programme', 'resultats', 'manifesto', 'science',
+  'equine', 'veterinary', 'sports', 'golf', 'tennis', 'padel', 'cycling', 'baseball', 'rowing', 'skiing', 'swimming',
+  'kine', 'reeducation',
+]);
+
+const EXTENDED_PAGES = new Set([
+  'coach', 'log', 'rest', 'profile', 'validate', 'weekly',
+  'prs', 'onboarding', 'coaches', 'physio',
+  'buddies', 'buddy', 'ergonomics', 'workplace', 'chat', 'showcase', 'demo', 'investisseur', 'volleyball',
+]);
+
+function getValidPages() {
+  if (showUnmeasuredRoutes()) {
+    return new Set([...CORE_PAGES, ...EXTENDED_PAGES]);
+  }
+  return CORE_PAGES;
+}
+
+function readHash() {
+  const raw = typeof window === 'undefined' ? '' : (window.location?.hash || '').replace(/^#\/?/, '').toLowerCase();
+  if (!raw) return 'dashboard';
+  // A coach's programme opens from its link, #programme=<payload> (programme.js): the page is the programme's.
+  if (raw.startsWith('programme=')) return 'programme';
+  // A client's results open on the coach's phone from their link, #resultats=<payload> (programme.js, 9 October).
+  if (raw.startsWith('resultats=')) return 'resultats';
+  // A physiotherapist's programme opens on the patient's phone, #kine-p=<payload>; a patient's result on the
+  // physiotherapist's, #kine-r=<payload> (lib/kine/links.js, 15 October 2026).
+  if (raw.startsWith('kine-p=')) return 'kinep';
+  if (raw.startsWith('kine-r=')) return 'kiner';
+  return getValidPages().has(raw) ? raw : 'dashboard';
+}
+
+let unknownNotice = null;
+const unknownListeners = new Set();
+
+function checkUnknownHash() {
+  const raw = typeof window === 'undefined' ? '' : (window.location?.hash || '').replace(/^#\/?/, '').toLowerCase();
+  if (!raw || raw === 'collecte' || raw === 'collecte-off') return false;
+  if (raw.startsWith('programme=') || raw.startsWith('resultats=') || raw.startsWith('kine-p=') || raw.startsWith('kine-r=')) return false;
+  return !getValidPages().has(raw);
+}
+
+/**
+ * True when the address opened or changed to an unknown hash (#nimporte-quoi, Card 050).
+ * Shown on the home screen alongside the choice of lift; cleared once seen or when a valid page opens.
+ */
+export function unknownAddressAtLoad() {
+  if (unknownNotice === null) {
+    unknownNotice = checkUnknownHash();
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('hashchange', () => {
+        const now = checkUnknownHash();
+        unknownNotice = now;
+        unknownListeners.forEach(f => f(now));
+      });
+    }
+  }
+  return Boolean(unknownNotice);
+}
+
+export function unknownAddressSeen() { unknownNotice = false; }
+
+export function onUnknownAddress(fn) {
+  unknownListeners.add(fn);
+  return () => unknownListeners.delete(fn);
+}
+
+/**
+ * Drop-in replacement for useState('dashboard') that syncs with the URL hash.
+ *
+ * - On mount, reads window.location.hash to restore the page.
+ * - On setPage, writes the hash so the URL stays in sync.
+ * - Listens to `hashchange` so the browser back/forward buttons work.
+ *
+ * Returns [page, setPage, browserMoves, browserPending]: the first two with the same API as useState.
+ */
+export default function useHashRouter() {
+  const [page, setPageState] = useState(readHash);
+  const current = useRef(page);
+  // The last page the app set or the browser announced. The browser changes the address at once
+  // and announces it later (hashchange); until then the address differs from this.
+  const known = useRef(page);
+  // How many times the browser has moved the page itself (back, forward, a typed address).
+  const moves = useRef(0);
+  // Every announced change renders the app again, even to the same page: a second results or programme link opened
+  // over the first changes only the address, which the screens read (excellence hunt, 9 October 2026).
+  const [, setChanges] = useState(0);
+
+  useEffect(() => { current.current = page; }, [page]);
+
+  // Sync hash -> state when the user presses back/forward. Safari animates
+  // its own back swipe, so the app marks the change and skips its crossfade.
+  useEffect(() => {
+    const onHashChange = () => {
+      const next = readHash();
+      if (next !== current.current) window.__wvHistoryNav = performance.now();
+      if (next !== known.current) moves.current += 1;
+      known.current = next;
+      setPageState(next);
+      setChanges(n => n + 1);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  // Wrapped setter: state + hash in one call
+  const setPage = useCallback((next) => {
+    const resolved = getValidPages().has(next) ? next : 'dashboard';
+    known.current = resolved;
+    setPageState(resolved);
+    const target = resolved === 'dashboard' ? '' : resolved;
+    // Only touch the hash if it actually changed, to avoid duplicate history entries
+    if (window.location.hash.replace(/^#\/?/, '') !== target) {
+      window.location.hash = target;
+    }
+  }, []);
+
+  // A count of the browser's own moves, announced or not: a change the app has waiting since an
+  // earlier count gives way, even when the browser came back to the same page (back, then forward).
+  const browserMoves = useCallback(() => moves.current + (readHash() !== known.current ? 1 : 0), []);
+  // True while the browser has moved to a page it has not yet announced.
+  const browserPending = useCallback(() => readHash() !== known.current, []);
+
+  return [page, setPage, browserMoves, browserPending];
+}

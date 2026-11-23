@@ -1,0 +1,232 @@
+import { describe, it, expect, vi } from 'vitest';
+// exercise-info.js reaches the drawing code, which reads the screen and draws its sprites when it
+// loads; a stand-in that accepts every call lets the names load outside a browser.
+vi.hoisted(() => {
+  const any = new Proxy(function stub() {}, { get: (_, k) => (k === Symbol.toPrimitive ? () => 0 : any), apply: () => any, set: () => true });
+  globalThis.window ??= { devicePixelRatio: 1 };
+  globalThis.document ??= { createElement: () => any };
+});
+import { setsCsv, repsCsv, csvField, exportFiles, BOM } from '../sets-csv';
+import { setMeasures, setTempo } from '../report-sheet';
+import { liftDefinition } from '../../../lib/counting/core';
+
+// Four whole reps with a slowdown, then one the video cut.
+const rep = (index, startTime, conc, ecc, rom, extra = {}) => ({ index, startTime, endTime: startTime + conc + ecc + 0.2, concentricSec: conc, eccentricSec: ecc, romDegrees: rom, peakSpeed: 180.4 + index, meanSpeed: 90.6 + index, ...extra });
+const REPS = [rep(1, 0, 1, 1.5, 120), rep(2, 3, 1.1, 1.5, 118), rep(3, 6, 1.4, 1.6, 116), rep(4, 9.5, 1.6, 1.7, 110), rep(5, 13, 0.4, 0, 60, { clipped: true })];
+const AT = Date.UTC(2026, 8, 28, 8, 30, 0);
+
+// A set saved by the result screen after a correction: 5 kept, 4 counted.
+const counted = { id: 'a', exercise: 'bicep_curl', reps: 5, createdAt: AT, source: 'counter-core', duration: 21.36, corrected: true,
+  machineResult: { reps: 4, confidence: 0.9 }, correctedResult: { reps: 5 }, repDetails: REPS, repDetailsVersion: 2 };
+// The same set kept as the app counted it: its rows are the set's reps.
+const exact = { ...counted, id: 'e', reps: 5, corrected: false, machineResult: { reps: 5, confidence: 0.9 }, correctedResult: null };
+// A manual set with a load, saved later.
+const manual = { id: 'b', exercise: 'squat', reps: 8, createdAt: AT + 3_600_000, source: 'manual', weight: 62.5, duration: 0,
+  machineResult: { reps: 8, confidence: null }, correctedResult: null };
+// An old upload with fields missing: no duration, no reps details, an old date field only.
+const old = { id: 'c', exerciseKey: 'lateral_raise', reps: 10, date: new Date(AT - 86_400_000).toISOString(), source: 'upload', weight: 0 };
+
+const lines = text => text.replace(BOM, '').split('\r\n').filter(Boolean);
+
+describe('csvField: RFC 4180 quoting', () => {
+  it('leaves plain fields bare and quotes the separator, quotes and line breaks', () => {
+    expect(csvField('Squat', ',')).toBe('Squat');
+    expect(csvField('a,b', ',')).toBe('"a,b"');
+    expect(csvField('a,b', ';')).toBe('a,b');
+    expect(csvField('a;b', ';')).toBe('"a;b"');
+    expect(csvField('say "hi"', ',')).toBe('"say ""hi"""');
+    expect(csvField('two\nlines', ';')).toBe('"two\nlines"');
+    expect(csvField('cr\rhere', ',')).toBe('"cr\rhere"');
+  });
+  it('writes a missing value as an empty field', () => {
+    expect(csvField(null, ',')).toBe('');
+    expect(csvField(undefined, ';')).toBe('');
+  });
+  // A restored backup can carry any text (validateSchema.ts checks shapes, not words): a field a
+  // spreadsheet would run as a formula is written as text (OWASP, CSV injection; Astra's audit).
+  it('writes text a spreadsheet would run as a formula as plain text', () => {
+    expect(csvField('=HYPERLINK("http://x","clic")', ',')).toBe('"\'=HYPERLINK(""http://x"",""clic"")"');
+    expect(csvField('+1+cmd', ',')).toBe("'+1+cmd");
+    expect(csvField('-2+3', ';')).toBe("'-2+3");
+    expect(csvField('@SUM(A1)', ',')).toBe("'@SUM(A1)");
+    expect(csvField('\t=1', ',')).toBe("'\t=1");
+    expect(csvField('\r=1', ',')).toBe('"\'\r=1"');
+  });
+  it('leaves numbers the file writes untouched, a negative one included', () => {
+    expect(csvField(-12, ',')).toBe('-12');
+    expect(csvField('-0,8', ';')).toBe('-0,8');
+    expect(csvField('-0.8', ',')).toBe('-0.8');
+  });
+});
+
+describe('setsCsv', () => {
+  it('starts with a BOM and a header row, ends rows with CRLF', () => {
+    const text = setsCsv([counted], { lang: 'en' });
+    expect(text.startsWith('\uFEFF')).toBe(true);
+    expect(text.endsWith('\r\n')).toBe(true);
+    expect(lines(text)[0].split(',')).toEqual(['Date', 'Exercise', 'Reps', 'Counted by the app', 'Corrected', 'Confirmed', 'Load (kg)', 'Duration (s)', 'Average tempo (experimental measure)', 'Measures to read with caution']);
+  });
+
+  it('writes French with semicolons and decimal commas, English with commas and dots', () => {
+    const fr = lines(setsCsv([manual], { lang: 'fr' }));
+    expect(fr[0].split(';')[0]).toBe('Date');
+    expect(fr[0]).toContain('Charge (kg)');
+    expect(fr[1].split(';')[6]).toBe('62,5');
+    const en = lines(setsCsv([manual], { lang: 'en' }));
+    expect(en[1].split(',')[6]).toBe('62.5');
+    // The duration keeps one decimal in each language.
+    expect(lines(setsCsv([counted], { lang: 'fr' }))[1].split(';')[7]).toBe('21,4');
+    expect(lines(setsCsv([counted], { lang: 'en' }))[1].split(',')[7]).toBe('21.4');
+  });
+
+  // A date and time as a spreadsheet reads one, in the phone's local time (review, 30 September:
+  // Excel showed ISO with an offset as text).
+  it('writes one row per set, oldest first, with a local date and time that reads back as the saved time', () => {
+    const rows = lines(setsCsv([manual, counted, old], { lang: 'en' })).slice(1).map(r => r.split(','));
+    expect(rows).toHaveLength(3);
+    expect(rows.map(r => new Date(r[0].replace(' ', 'T')).getTime())).toEqual([AT - 86_400_000, AT, AT + 3_600_000]);
+    for (const r of rows) expect(r[0]).toMatch(/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/);
+  });
+
+  it('names the exercise in the phone language', () => {
+    expect(lines(setsCsv([counted], { lang: 'fr' }))[1].split(';')[1]).toBe('Curl biceps');
+    expect(lines(setsCsv([counted], { lang: 'en' }))[1].split(',')[1]).toBe('Biceps curl');
+    // A caller may pass the screen's own naming.
+    expect(lines(setsCsv([counted], { lang: 'en', name: () => 'Mine' }))[1].split(',')[1]).toBe('Mine');
+  });
+
+  it('keeps the final reps, the app count, corrected and confirmed apart', () => {
+    const [, row] = lines(setsCsv([counted], { lang: 'fr' }));
+    expect(row.split(';').slice(2, 6)).toEqual(['5', '4', 'oui', 'oui']);
+    const [, en] = lines(setsCsv([counted], { lang: 'en' }));
+    expect(en.split(',').slice(2, 6)).toEqual(['5', '4', 'yes', 'yes']);
+  });
+
+  it('leaves the app count and correction empty on a set entered by hand', () => {
+    const [, row] = lines(setsCsv([manual], { lang: 'en' }));
+    expect(row.split(',').slice(2, 6)).toEqual(['8', '', '', 'yes']);
+  });
+
+  it('marks an old upload unconfirmed and leaves every missing field empty', () => {
+    const [, row] = lines(setsCsv([old], { lang: 'en' }));
+    const f = row.split(',');
+    expect(f[2]).toBe('10');
+    expect(f[3]).toBe('10');
+    expect(f[4]).toBe('no');
+    expect(f[5]).toBe('no');
+    expect(f.slice(6)).toEqual(['', '', '', '']); // weight 0 is no load; no duration, no reps details (no speed column), so no caution either
+  });
+
+  it('writes the coach report\'s tempo (setTempo), and no speed change while SPEED_CHANGE_SHOWN is off', () => {
+    const [head, row] = lines(setsCsv([counted], { lang: 'en' }));
+    const f = row.split(',');
+    expect(f[8]).toBe(setTempo(REPS, liftDefinition('bicep_curl').first));
+    expect(setMeasures(REPS).speedChange).not.toBeNull();
+    expect(f).toHaveLength(10);
+    expect(head).not.toMatch(/speed change/i);
+  });
+
+  it('writes the tempo under four whole reps too', () => {
+    const three = { ...counted, repDetails: REPS.slice(0, 3) };
+    const f = lines(setsCsv([three], { lang: 'en' }))[1].split(',');
+    expect(f[8]).not.toBe('');
+  });
+
+  it('ignores reps details measured before step 3c', () => {
+    const before = { ...counted, repDetailsVersion: undefined };
+    const f = lines(setsCsv([before], { lang: 'en' }))[1].split(',');
+    expect(f.slice(8)).toEqual(['', '']);
+  });
+
+  // 24 October 2026: a set the body check flagged keeps its measures once the person answered (saved-set.js
+  // keepsMeasures); the file says they were read on a doubted joint, as the report does beside them.
+  it('says whether a set\'s measures were read on a joint the body check doubted', () => {
+    const f = lines(setsCsv([counted, { ...counted, bodyCheck: { agreement: 0.1, second: null } }], { lang: 'fr' })).slice(1).map(r => r.split(';').at(-1));
+    expect(f).toEqual(['non', 'oui']);
+    expect(lines(setsCsv([counted], { lang: 'fr' }))[0].split(';').at(-1)).toBe('Mesures à prendre avec précaution');
+    // Without the measures, no measure to doubt: no column.
+    expect(lines(setsCsv([counted], { lang: 'fr', measures: false }))[0]).not.toContain('précaution');
+  });
+
+  it('writes a header only when there is no set', () => {
+    expect(lines(setsCsv([], { lang: 'fr' }))).toHaveLength(1);
+  });
+});
+
+describe('repsCsv', () => {
+  it('writes one row per rep of the sets that hold measured reps', () => {
+    const rows = lines(repsCsv([manual, exact, old], { lang: 'en' }));
+    expect(rows[0].split(',')).toEqual(['Set date', 'Exercise', 'Rep', 'Range (°) (experimental measure)', 'Concentric (s) (experimental measure)', 'Eccentric (s) (experimental measure)', 'Peak speed (°/s) (experimental measure)', 'Mean speed (°/s) (experimental measure)', 'Cut by the video', 'Measures to read with caution']);
+    expect(rows).toHaveLength(1 + REPS.length);
+    const first = rows[1].split(',');
+    expect(Date.parse(first[0])).toBe(AT);
+    expect(first.slice(1)).toEqual(['Biceps curl', '1', '120', '1.0', '1.5', '181', '92', 'no', 'no']);
+  });
+
+  it('writes French with semicolons and decimal commas', () => {
+    const rows = lines(repsCsv([exact], { lang: 'fr' }));
+    expect(rows[0].split(';')).toEqual(['Date de la série', 'Exercice', 'Rép.', 'Amplitude (°) (mesure expérimentale)', 'Concentrique (s) (mesure expérimentale)', 'Excentrique (s) (mesure expérimentale)', 'Vitesse max (°/s) (mesure expérimentale)', 'Vitesse moyenne (°/s) (mesure expérimentale)', 'Coupée par la vidéo', 'Mesures à prendre avec précaution']);
+    expect(rows[2].split(';').slice(1)).toEqual(['Curl biceps', '2', '118', '1,1', '1,5', '182', '93', 'non', 'non']);
+    // A set the body check flagged: every rep row says so.
+    expect(lines(repsCsv([{ ...exact, bodyCheck: { agreement: 0.1, second: null } }], { lang: 'fr' })).slice(1).map(r => r.split(';').at(-1))).toEqual(REPS.map(() => 'oui'));
+  });
+
+  it('leaves the times and speeds of a rep the video cut empty, as the report does', () => {
+    const rows = lines(repsCsv([exact], { lang: 'en' }));
+    expect(rows[5].split(',').slice(2)).toEqual(['5', '60', '', '', '', '', 'yes', 'no']);
+  });
+
+  // Third audit C12 (3 October): after a correction the rows are the marks the app detected, named as the report
+  // names them, never the reps of the count the user saved.
+  it('names a corrected set\'s rows as detected marks, as the report does', () => {
+    const fr = lines(repsCsv([counted], { lang: 'fr' })).slice(1).map(r => r.split(';')[2]);
+    expect(fr).toEqual(['Repère 1', 'Repère 2', 'Repère 3', 'Repère 4', 'Repère 5']);
+    const en = lines(repsCsv([counted, exact], { lang: 'en' })).slice(1).map(r => r.split(',')[2]);
+    expect(en).toEqual(['Mark 1', 'Mark 2', 'Mark 3', 'Mark 4', 'Mark 5', '1', '2', '3', '4', '5']);
+    // Read again and the person's reps found (recountTo): the rows are theirs (24 October 2026).
+    expect(lines(repsCsv([{ ...counted, recount: { tuning: { marginScale: 1.1 } } }], { lang: 'fr' })).slice(1).map(r => r.split(';')[2])).toEqual(['1', '2', '3', '4', '5']);
+  });
+
+  it('is null when no set holds measured reps', () => {
+    expect(repsCsv([manual, old], { lang: 'en' })).toBeNull();
+    expect(repsCsv([{ ...counted, repDetailsVersion: 1 }], { lang: 'en' })).toBeNull();
+  });
+});
+
+describe('exportFiles', () => {
+  const now = new Date(2026, 8, 30, 12);
+  it('names the files in ASCII, in the phone language, with the day', () => {
+    expect(exportFiles([counted], { lang: 'fr', now }).map(f => f.name)).toEqual(['series-2026-09-30.csv', 'repetitions-2026-09-30.csv']);
+    expect(exportFiles([counted], { lang: 'en', now }).map(f => f.name)).toEqual(['sets-2026-09-30.csv', 'reps-2026-09-30.csv']);
+  });
+  it('gives only the sets file when no set holds measured reps', () => {
+    const files = exportFiles([manual], { lang: 'en', now });
+    expect(files.map(f => f.name)).toEqual(['sets-2026-09-30.csv']);
+    expect(files[0].text).toBe(setsCsv([manual], { lang: 'en' }));
+  });
+});
+
+// Review, 30 September: the spreadsheet's tempo is the coach report's, to the tenth, never another one.
+describe('the tempo, as the coach report writes it', () => {
+  it('equals the report summary\'s tempo for the same set', async () => {
+    const { reportSheet } = await import('../report-sheet');
+    const sheet = reportSheet({ lang: 'en', date: new Date(AT), notes: '', liftName: 'x', count: 5, counted: 5, reps: REPS, first: 'concentric' });
+    const tempo = sheet.summary.find(l => l.startsWith('Tempo')).split(': ')[1];
+    const row = setsCsv([counted], { lang: 'en' }).slice(1).split('\r\n')[1];
+    expect(row).toContain(tempo);
+  });
+});
+
+// Review, 30 September: the file's separator and decimal mark follow the phone's own locale, where
+// the spreadsheet will open it, not the app's language.
+describe('the file format follows the phone', () => {
+  it('an English app on a French phone writes semicolons and decimal commas', () => {
+    const text = setsCsv([counted], { lang: 'en', locale: 'fr-FR' });
+    expect(text.split('\r\n')[0]).toContain('Date;Exercise;');
+    expect(text).toContain('21,4');
+  });
+  it('a French app on a US phone writes commas and decimal points', () => {
+    const text = setsCsv([counted], { lang: 'fr', locale: 'en-US' });
+    expect(text.split('\r\n')[0]).toContain('Date,Exercice,');
+  });
+});

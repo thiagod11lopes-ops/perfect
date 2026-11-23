@@ -1,0 +1,129 @@
+name: Deploy to GitHub Pages
+
+# Publication waits for the whole CI verdict on main: lint, types, tests, the browser tests in Chromium and
+# WebKit, the iPhone tour and the synthetic journeys (ci.yml). On 2 October main was published at 20:52 and its
+# WebKit tour failed at 21:02 (audit, FINDING-001). The commit published is the one CI passed, and it is main's
+# tip: a deploy by hand, or a CI re-run of an older commit, publishes nothing else (third audit, C29, C30, C44).
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# The build runs npm ci and the tests: it reads the code and nothing more. Only the deploy job may publish
+# (audit of 3 October: a compromised dependency in the build could otherwise deploy the site).
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  # Only main's tip, and only a commit CI passed (third audit, C29, C30, C44). A re-run of an older commit's CI
+  # that now passes would otherwise publish that commit over a newer one: it is skipped, not failed, so a
+  # superseded run does not show red (review of the fixes, 3 October). A deploy by hand of a commit CI did not
+  # pass would otherwise publish it, as the WebKit tour showed on 2 October (FINDING-001): that one fails.
+  gate:
+    # A deploy by hand publishes main only, never another branch past the CI gate (R6).
+    if: (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    # Reads main's tip and CI's runs for the commit (actions: read); it cannot write anything.
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+    steps:
+      - id: check
+        name: Publish only main's tip, and only a commit CI passed (R6)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          tip=$(gh api "repos/$REPO/commits/main" --jq .sha)
+          if [ "$SHA" != "$tip" ]; then
+            echo "Commit $SHA is not main's tip ($tip): superseded, nothing is published."
+            echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "$EVENT" = workflow_dispatch ]; then
+            c=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&branch=main&event=push&status=completed" --jq '.workflow_runs[0].conclusion // "none"')
+            if [ "$c" != success ]; then
+              echo "CI's latest completed run for $SHA concluded '$c': a deploy by hand publishes only a commit CI passed."; exit 1
+            fi
+          fi
+          echo "go=true" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: gate
+    if: needs.gate.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # What the published build may do, set once for every step below (WP0.3, docs/SPEC-production.md):
+    # - VITE_EVENTS_URL, the anonymous usage counts (src/lib/events.js), is the repository variable (D6, 15 October 2026;
+    #   WP2.3). Unset, the app sends nothing; set, the counts go to that worker, with their notice (UsageNotice.jsx).
+    #   To switch them on or off is the variable alone (feedback-worker/README.md, Deploy); the check of dist/ below
+    #   then allows that origin only, and fails when the built notice does not name its host (PRIV-3).
+    # - VITE_LIVE (src/lib/buildFlags.js) is left unset: no live counting until Phase 6 (WP6.5); VITE_LIVE: '1' here
+    #   switches it on.
+    # - VITE_CONTRIBUTE is on since 13 November 2026 (David: "Build both"): after a saved set the app asks once, opt-in,
+    #   to keep the set's landmarks (never the video) on the phone, sent by the person through the share sheet
+    #   (contribute.js, the notice David approved on 9 October 2026). Removing the line pauses it again.
+    # - VITE_KINE_MEDIA_URL, where the physiotherapist's reference videos are served (src/lib/kine/library.js; 15 October
+    #   2026), is the repository variable. Unset, the physiotherapist's workspace says the videos are not online yet;
+    #   set (https), the pages may load media from that origin and no other (vite.config.js, kineMediaCspPlugin).
+    # - VITE_GLIMPSE_URL, the proxy of the patient's AI commentary (glimpse-proxy/, src/lib/kine/glimpse.js; 17 October
+    #   2026), is the repository variable. Unset, the commentary is not offered; set (https), the pages may reach that
+    #   origin and Vercel Blob's upload address (vite.config.js, glimpseCspPlugin). Since 24 October 2026 (David), while
+    #   the attempt store is public (src/lib/kine/attemptStorage.js), this production build neither offers the upload
+    #   nor names either origin in its policy, whatever https address the variable holds.
+    env:
+      VITE_EVENTS_URL: ${{ vars.VITE_EVENTS_URL }}
+      VITE_CONTRIBUTE: '1'
+      VITE_KINE_MEDIA_URL: ${{ vars.VITE_KINE_MEDIA_URL }}
+      VITE_GLIMPSE_URL: ${{ vars.VITE_GLIMPSE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      # The anonymous usage counts go to the server the job's VITE_EVENTS_URL names, if any: unset, the app sends
+      # nothing and its page policy is unchanged. The flags of the job's env reach the build.
+      - run: npm run build
+      # Unset: fails when dist/ holds any events URL. Set: fails when dist/ holds any other events origin, or when the
+      # built notice of the counts does not name the variable's host (PRIV-3) (scripts/check-dist-events.mjs); prints
+      # the length of VITE_EVENTS_URL, never its value.
+      - name: Only the configured events URL, and a notice naming its host (D6, PRIV-3)
+        env:
+          EVENTS_URL_VAR: ${{ vars.VITE_EVENTS_URL }}
+        run: node scripts/check-dist-events.mjs dist
+      - run: npx playwright install --with-deps chromium
+      # The spec loads this build online: given the same address, it aborts every usage count the build would send,
+      # so test visits never land in the production counts (e2e/offline.spec.js; review finding N2).
+      - run: npx playwright test e2e/offline.spec.js --retries=0
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

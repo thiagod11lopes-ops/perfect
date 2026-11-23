@@ -1,0 +1,70 @@
+/**
+ * Shared utilities used across multiple components.
+ */
+
+export function gradeFromScore(score: number | null | undefined): string {
+  if (score == null) return '--';
+  if (score >= 90) return 'A+';
+  if (score >= 80) return 'A';
+  if (score >= 70) return 'B';
+  if (score >= 60) return 'C';
+  if (score >= 50) return 'D';
+  return 'F';
+}
+
+export function gradeClass(score: number | null | undefined): string {
+  if (score == null) return 'grade-na';
+  if (score >= 80) return 'grade-a';
+  if (score >= 70) return 'grade-b';
+  if (score >= 60) return 'grade-c';
+  return 'grade-d';
+}
+
+export function getRecorderMimeType(): string | null {
+  if (typeof MediaRecorder === 'undefined') return null;
+  const types: string[] = [
+    'video/mp4;codecs=avc1.42E01E',
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+  ];
+  for (const t of types) {
+    if (MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return null;
+}
+
+// Muscle name translations (single source of truth)
+export const MUSCLE_FR: Record<string, string> = {
+  'Pectorals': 'Pectoraux', 'Upper Pectorals': 'Pectoraux sup.',
+  'Anterior Deltoid': 'Deltoïde ant.', 'Medial Deltoid': 'Deltoïde moy.',
+  'Rear Deltoid': 'Deltoïde post.', 'Triceps': 'Triceps',
+  'Triceps (long head)': 'Triceps (long.)',
+  'Biceps Brachii': 'Biceps', 'Biceps': 'Biceps',
+  'Brachialis': 'Brachial', 'Brachioradialis': 'Brachio-radial',
+  'Forearms': 'Avant-bras', 'Latissimus Dorsi': 'Grand dorsal',
+  'Rhomboids': 'Rhomboïdes', 'Traps': 'Trapèzes', 'Upper Back': 'Haut du dos',
+  'Erectors': 'Érecteurs', 'Serratus Anterior': 'Dentelé ant.',
+  'Quadriceps': 'Quadriceps', 'Hamstrings': 'Ischio-jambiers',
+  'Glutes': 'Fessiers', 'Hip Flexors': 'Fléch. hanche',
+  'Gastrocnemius': 'Mollets', 'Soleus': 'Soléaire',
+  'Core': 'Gainage', 'Rectus Abdominis': 'Abdominaux',
+  'Obliques': 'Obliques', 'Transverse Abdominis': 'Transverse',
+  'Full Body': 'Corps entier',
+  'Chest': 'Pectoraux', 'Shoulders': 'Épaules', 'Abs': 'Abdominaux',
+  'Lats': 'Grand dorsal', 'Rear Delts': 'Deltoïdes post.',
+  'Lower Back': 'Bas du dos', 'Calves': 'Mollets',
+  'Lateral Deltoids': 'Deltoïdes latéraux', 'Lateral Deltoid': 'Deltoïde latéral',
+  'Anterior Deltoids': 'Deltoïdes antérieurs', 'Posterior Deltoids': 'Deltoïdes postérieurs',
+  'Trapezius': 'Trapèzes', 'Upper Trapezius': 'Trapèzes supérieurs',
+  'Lower Trapezius': 'Trapèzes inférieurs', 'Deltoids': 'Deltoïdes',
+  'Gluteus Medius': 'Moyen fessier', 'Lower Pectorals': 'Pectoraux inférieurs',
+  'Rotator Cuff': 'Coiffe des rotateurs', 'Teres Major': 'Grand rond',
+  'Tibialis Anterior': 'Tibial antérieur', 'Hip Abductors': 'Abducteurs de hanche',
+  'Hip Adductors': 'Adducteurs de hanche',
+};
+
+export function translateMuscle(name: string, lang: string): string {
+  if (lang === 'fr' && MUSCLE_FR[name]) return MUSCLE_FR[name];
+  return name;
+}

@@ -1,0 +1,88 @@
+{
+  "_meta": { "name": "Português", "short": "PT", "flag": "br", "htmlLang": "pt-BR" },
+
+  "title": "NEON OPHIS",
+  "tagline": "AN ARCADE THAT DREAMS IN 4K",
+
+  "meta.description": "NEON OPHIS — an arcade snake dreaming in 4K.",
+
+  "splash.presents": "Adriano Franco apresenta",
+  "splash.eatGrow": "EAT · GROW · COMBO · REPEAT",
+  "splash.pressAnyKey": "APERTE QUALQUER TECLA",
+
+  "menu.credits": "CRÉDITOS",
+  "menu.creditsBlurb": "quem fez isso aqui",
+  "menu.scores": "RECORDES",
+  "menu.scoresBlurb": "o salão dos campeões",
+  "menu.hi": "REC",
+  "menu.controls": "↑/↓  SELECIONAR      ENTER  JOGAR      P  PAUSAR      M  MUTAR",
+
+  "scores.title": "RECORDES",
+  "scores.noEntries": "nenhuma partida ainda",
+  "scores.controls": "←/→  MODO      ESC  VOLTAR",
+
+  "mode.classic.label": "CLASSIC",
+  "mode.classic.blurb": "A dança eterna. Mais rápido a cada 5 maçãs.",
+  "mode.chaos.label": "CHAOS",
+  "mode.chaos.blurb": "3× power-ups. Eventos aleatório e regras opcionais.",
+  "mode.timeattack.label": "TIME ATTACK",
+  "mode.timeattack.blurb": "60 segundos sem obstáculos. Apenas CORRA!",
+  "mode.relax.label": "RELAX",
+  "mode.relax.blurb": "Treine, relaxe e tente não morder o próprio rabo.",
+
+  "chaos.foodStorm": "MAIS COMIDA!",
+  "chaos.speedBurst": "EXPLOSÃO DE VELOCIDADE!",
+  "chaos.slowMo": "CÂMERA LENTA!",
+  "chaos.powerupRain": "PEGUE OS POWER-UPS!",
+
+  "hud.score": "PONTOS",
+  "hud.combo": "COMBO",
+  "hud.bestCombo": "MELHOR COMBO",
+
+  "over.title": "GAME OVER",
+  "over.newHigh": "NOVO RECORDE!",
+  "over.score": "PONTOS",
+  "over.apples": "MAÇÃS",
+  "over.powerups": "POWER-UPS",
+  "over.bestCombo": "MELHOR COMBO",
+  "over.survived": "SOBREVIVEU",
+  "over.hiScores": "RECORDES",
+  "over.enterYourName": "DIGITE SEU NOME",
+  "over.nameHint": "ENTER  confirmar     BACKSPACE  apagar     ESC  pular",
+  "over.playAgain": "APERTE  R / ENTER  PARA JOGAR DE NOVO",
+  "over.mainMenu": "ESC  PARA O  MENU",
+
+  "quit.title": "SAIR?",
+  "quit.confirm": "Y  /  ENTER  —  confirmar",
+  "quit.resume": "N  /  ESC  —  voltar",
+
+  "common.play": "JOGAR",
+  "common.back": "VOLTAR",
+  "common.yes": "SIM",
+  "common.no": "NÃO",
+  "common.ok": "OK",
+  "common.menu": "MENU",
+
+  "touch.tapMode": "TOQUE UM MODO PARA JOGAR",
+  "touch.playAgain": "JOGAR DE NOVO",
+  "touch.tapName": "TOQUE PARA DIGITAR SEU NOME",
+
+  "credits.createdBy": "CRIADO POR",
+  "credits.roles": "game design · código · arte",
+  "credits.quote1a": "\"Queria um Snake com alma.",
+  "credits.quote1b": "Esse tem.\"",
+  "credits.codePartner": "PARCEIRO DE CÓDIGO",
+  "credits.partnerLine1": "Cada linha de TypeScript,",
+  "credits.partnerLine2": "cada nota do SID,",
+  "credits.partnerLine3": "cada partícula —",
+  "credits.partnerLine4": "par a par.",
+  "credits.disclaimer1": "\"Nenhum modelo foi prejudicado",
+  "credits.disclaimer2": "na criação deste jogo.\"",
+  "credits.techInspiration": "INSPIRAÇÃO TÉCNICA",
+  "credits.book1": "O VIC-II, o SID, o CIA —",
+  "credits.book2": "64KB de pura magia.",
+  "credits.book3": "Sonhamos esse jogo",
+  "credits.book4": "dentro de um cartucho.",
+  "credits.madeWith": "FEITO COM ♥ E MUITO CAOS",
+  "credits.back": "ESC · ENTER · VOLTAR"
+}

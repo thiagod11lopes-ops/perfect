@@ -1,0 +1,63 @@
+import { useEffect, useRef, useState } from 'react';
+import { restClock, nextTick, restText, restSpoken, keepAwakeDuringRest } from './rest-clock';
+import { holdScreenAwake } from '../../lib/interruption';
+import Digits from './Digits';
+
+/**
+ * The rest after the set, counted up from the moment the set is saved, or from a tap; a tap stops it. It sets no length to reach
+ * and says nothing of how long to rest (rest-clock.js). The time is drawn on each whole second and
+ * again the moment the page comes back into view, so a phone that slept shows the right time at once.
+ */
+export default function RestClock({ fr, autoStart = false, clock: shared, targetSec = null }) {
+  // The result screen passes the set's one clock (started as the set is saved), so the card that shows
+  // it after a failed save and the saved card show the same rest. Alone, autoStart starts its own.
+  const [clock] = useState(() => { if (shared) return shared; const c = restClock(); if (autoStart) c.start(); return c; });
+  const [running, setRunning] = useState(() => clock.running);
+  const [, redraw] = useState(0);
+  const alerted = useRef(false);
+  // The button that replaces the one tapped takes the focus, so the keyboard and screen readers stay in place.
+  const buttonRef = useRef(null), moved = useRef(false);
+  useEffect(() => { if (moved.current) buttonRef.current?.focus({ preventScroll: true }); }, [running]);
+
+  useEffect(() => {
+    if (!running) return undefined;
+    let t = 0;
+    const tick = () => { redraw(n => n + 1); t = setTimeout(tick, nextTick(clock)); };
+    t = setTimeout(tick, nextTick(clock));
+    const back = () => { if (document.visibilityState === 'visible') { clearTimeout(t); tick(); } };
+    document.addEventListener('visibilitychange', back);
+    window.addEventListener('pageshow', back);
+    return () => { clearTimeout(t); document.removeEventListener('visibilitychange', back); window.removeEventListener('pageshow', back); };
+  }, [running, clock]);
+
+  // The screen stays awake while the rest runs, up to the cap (rest-clock.js, keepAwakeDuringRest).
+  useEffect(() => (running ? keepAwakeDuringRest(clock, { hold: holdScreenAwake }) : undefined), [running, clock]);
+
+  const s = clock.seconds();
+  const targetReached = Boolean(targetSec && s >= targetSec);
+  useEffect(() => {
+    if (targetReached && !alerted.current) {
+      alerted.current = true;
+      navigator.vibrate?.([50, 80, 50]);
+    }
+  }, [targetReached]);
+
+  function start() { navigator.vibrate?.(10); clock.start(); moved.current = true; setRunning(true); }
+  function stop() { clock.stop(); moved.current = true; setRunning(false); }
+
+  if (!running) {
+    return <button ref={buttonRef} type="button" className="btn-ghost press rest-start" onClick={start}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2.5 1.5" /><path d="M10 2.5h4" /></svg>
+      <span>{fr ? 'Lancer le repos' : 'Start rest'}</span>
+    </button>;
+  }
+  return <div className="rest-clock appear" data-testid="rest-clock">
+    <p className={`eyebrow rest-label${targetReached ? ' is-target-reached' : ''}`} id="rest-label">{fr ? (targetReached ? 'Repos atteint' : 'Repos') : (targetReached ? 'Target rest reached' : 'Rest')}</p>
+    {/* A timer is not announced each second; its words are read when the reader reaches it. */}
+    <p className="rest-time" role="timer" aria-labelledby="rest-label">
+      <span aria-hidden="true"><Digits text={restText(s)} /></span><span className="sr">{restSpoken(s, fr)}</span>
+    </p>
+    <button ref={buttonRef} type="button" className="text-btn press rest-stop" onClick={stop}>{fr ? 'Arrêter le repos' : 'Stop rest'}</button>
+  </div>;
+}
+

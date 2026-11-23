@@ -1,0 +1,53 @@
+import { useT } from '../../lib/LanguageContext';
+import { ABOUT, PHOTOS } from './about-copy';
+import { DemoVideos } from './DemoVideos';
+import './About.css';
+
+// One photo of public/about/, with its pixel size so its place is kept before it loads. Only the portrait, at the
+// top, loads at once.
+function Photo({ id, alt, caption, eager = false }) {
+  const p = PHOTOS[id];
+  const img = <img src={`${import.meta.env.BASE_URL}about/${p.file}`} width={p.width} height={p.height} alt={alt}
+    loading={eager ? undefined : 'lazy'} decoding="async" />;
+  // The portrait reveals with the title; the others come with the text around them.
+  return <figure className={`about-photo about-${id}`} {...(eager ? { 'data-reveal': true, style: { '--i': 0 } } : {})}>
+    {img}
+    {caption && <figcaption>{caption}</figcaption>}
+  </figure>;
+}
+
+const Paragraph = ({ lines }) => <p className="about-p">{lines.map(line => <span key={line} className="about-line">{line}</span>)}</p>;
+
+/** "À propos": why the app exists, in David's words (about-copy.js). */
+export default function About({ onClose, onManifesto }) {
+  const { lang } = useT(), fr = lang === 'fr';
+  const c = ABOUT[fr ? 'fr' : 'en'], [p1, p2, p3, p4, p5] = c.paragraphs;
+  return <div className="wv-experience">
+    <section className="screen is-active about-screen"><div className="wrap">
+      <div className="topbar">
+        <button className="icon-btn press" onClick={onClose} aria-label={fr ? 'Retour' : 'Back'}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg></button>
+        <span className="pill">{fr ? 'Version de test' : 'Test version'}</span>
+      </div>
+      <Photo id="portrait" alt={c.photos.portrait.alt} eager />
+      <h1 className="title" data-reveal style={{ '--i': 1 }}>{c.title}</h1>
+      <div className="about-body" data-reveal style={{ '--i': 2 }}>
+        {/* The serif opening line of David's story, at its head (design review, 7 October 2026). */}
+        <p className="about-lead">{c.lead}</p>
+        <Paragraph lines={p1} />
+        <Photo id="sanSiro" {...c.photos.sanSiro} />
+        <Paragraph lines={p2} />
+        <Photo id="dordogne" {...c.photos.dordogne} />
+        <Paragraph lines={p3} />
+        <Paragraph lines={p4} />
+        <DemoVideos fr={fr} />
+        <Paragraph lines={p5} />
+        <p className="about-signature">{c.signature}</p>
+        {onManifesto && <div className="about-manifesto-action">
+          <button type="button" className="about-manifesto-btn press" onClick={onManifesto} data-testid="about-manifesto-btn">
+            {fr ? 'Lire le Manifeste WorkoutVision' : 'Read the WorkoutVision Manifesto'}
+          </button>
+        </div>}
+      </div>
+    </div></section>
+  </div>;
+}

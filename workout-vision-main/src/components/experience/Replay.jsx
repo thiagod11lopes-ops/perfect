@@ -1,0 +1,655 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useT } from '../../lib/LanguageContext';
+import { exerciseName } from './exercise-info';
+import { liftDefinition } from '../../lib/counting/core';
+import { decimal } from './report-sheet';
+import { partialIn } from './tempo';
+import { poseAt, repAt, phaseAt, into, keyedTime, angleAt, repsDone } from './replay-track';
+import { drawSkeleton, litSides, trailPoints } from './replay-draw';
+import { steadyFrames, trailAt } from './replay-smooth';
+import { canExport, exportSetVideo } from './video-export';
+import { shareSheet } from '../../lib/shareSheet';
+import './Replay.css';
+import { track } from '../../lib/events';
+import { MEASURES_SHOWN, UNVALIDATED_BIOMECHANICS_SHOWN, experimentalLabel } from './measures';
+import { isCorrected, markLabel, provenance } from './replay-labels';
+import { replayClock } from './replay-clock';
+import { keepsMeasures } from './saved-set';
+import { jointName } from './lift-meta';
+import { RESULT } from './result-copy';
+import { detectSetStickingPoints } from '../../lib/biomechanics/stickingPoint';
+import { analyzeKineticChainSequencing } from '../../lib/biomechanics/kineticChainSequencing';
+import { analyzeLumbopelvicRhythm } from '../../lib/biomechanics/lumbopelvicRhythm';
+import { analyzeBarbellTilt } from '../../lib/biomechanics/barbellTilt';
+import { analyzeScapularPlane } from '../../lib/kine/shoulderDyskinesis';
+import MocapViewer from './MocapViewer';
+import BarPathTracer from './BarPathTracer';
+
+/** Lifts done with a barbell, on which the replay offers the bar path (card 014). Status: convention. */
+const BAR_LIFTS = new Set(['squat', 'bench_press', 'overhead_press', 'romanian_deadlift', 'deadlift', 'hip_thrust', 'good_morning', 'front_squat', 'back_squat']);
+
+// The set replayed with the skeleton the pose model tracked on it: what the app saw,
+// frame by frame, with the joint whose angle counts the reps in the lamp's colour.
+// The video is read from the phone and sent nowhere. A set counted live has no video (file is null): the skeleton
+// is replayed alone, on a clock that stands in for the video (replay-clock.js), and nothing offers a video to share.
+
+export default function Replay({ file, result, lift, saved = null, leaving, onBack }) {
+  const { lang } = useT(), fr = lang === 'fr';
+  const videoRef = useRef(null), canvasRef = useRef(null), backRef = useRef(null), lineRef = useRef(null);
+  const drag = useRef(null);
+  const lastVibrateRep = useRef(-1);
+  const [url, setUrl] = useState(null);
+  const [playing, setPlaying] = useState(false);
+  const [slow, setSlow] = useState(false);
+  const [now, setNow] = useState(0);
+  const [broken, setBroken] = useState(false);
+  const [mocapMode, setMocapMode] = useState(false);
+  const [showBarPath, setShowBarPath] = useState(false);
+  // The bar path is offered only on a lift done with a bar (card 014, 13 November 2026): a curl, a machine or a body-weight
+  // set has no bar to trace. Status: convention (the lifts done with a barbell as the guide describes them).
+  const hasBar = BAR_LIFTS.has(lift) || String(lift).includes('barbell');
+
+  // A refused set shows no reps here either: the result said it could not count them.
+  const times = result.timestamps || [], reps = (!result.refused && result.reps) || [];
+  // The skeleton drawn is the model's, steadied for the eye once per set (replay-smooth.js); the count never reads it.
+  const frames = useMemo(() => (steadyFrames ? steadyFrames(result.imageLandmarks || [], times) : (result.imageLandmarks || [])), [result]); // eslint-disable-line react-hooks/exhaustive-deps
+  const smoothedAngles = result.smoothedAngles || [];
+  // An exercise the core does not offer is read by the universal engine (universalProposal.js), which counts on no joint
+  // of the core's: nothing is lit for it, even for the few lifts the core defines but does not offer (walking lunge, dead
+  // bug...), whose lit joint would claim a count the app did not make.
+  const def = result.universal ? null : liftDefinition(lift);
+  const sides = litSides(def, result.arm);
+  const meta = result.metadata || {};
+  const fw = meta.width || meta.extractedWidth || 9, fh = meta.height || meta.extractedHeight || 16;
+  const [length, setLength] = useState(meta.duration || times[times.length - 1] || 1);
+  const liftName = exerciseName(lift, lang);
+  // After a correction the marks are the app's detections, beside the count the user saved (replay-labels.js).
+  const corrected = isCorrected(saved, result.count), note = provenance({ detected: result.count, saved, fr });
+  // Without a video, the clock stands in for it from the first render, so the effects below find it in videoRef.
+  const clock = useRef(null);
+  if (!file && !clock.current) clock.current = replayClock(length, { width: fw, height: fh });
+  if (!file) videoRef.current = clock.current;
+
+  // Step 4: the video with its overlay, prepared on a first tap and shared on a second, since the share
+  // sheet opens only inside a tap and the recording takes as long as the set.
+  const [made, setMade] = useState({ state: 'idle', progress: 0, file: null, link: null, isClean: false });
+  const abort = useRef(null);
+  useEffect(() => () => { abort.current?.abort(); }, []);
+  useEffect(() => () => { if (made.link) URL.revokeObjectURL(made.link); }, [made.link]);
+  const exportable = !!file && !broken && !result.refused && canExport();
+  // Card 004: the video to share is prepared from the moment the replay opens, as the person watches the set once, so
+  // it is ready when they ask for it (baseline 3 taps and 12.6 s of wait, e2e/share-in-one-tap.spec.js). A tap on the
+  // picture during that first viewing stops the preparation and gives the person the controls; an interruption made
+  // that way, or by the phone, brings back « Préparer la vidéo à partager » without an error. Muted and inline, as the
+  // recording plays it; not yet seen on David's iPhone, whose Safari may refuse to play outside a tap (video-export.js).
+  const auto = useRef(false);
+  function prepare(clean = false, byItself = false) {
+    videoRef.current?.pause();
+    auto.current = byItself;
+    abort.current = new AbortController();
+    setMade({ state: 'making', progress: 0, file: null, link: null, isClean: clean, auto: byItself });
+    // Made from the video on screen, played from its start: the person watches the set as it is prepared.
+    setSlow(false);
+    exportSetVideo({ file, result, lift, fr, saved, clean, screen: videoRef.current, signal: abort.current.signal, onProgress: p => setMade(m => (m.state === 'making' ? { ...m, progress: p } : m)) })
+      .then(out => setMade({ state: 'ready', progress: 1, file: out, link: URL.createObjectURL(out), isClean: clean }))
+      .catch(e => {
+        if (e?.name === 'AbortError' || (byItself && auto.current)) { if (byItself) setMade({ state: 'idle', progress: 0, file: null, link: null, isClean: false }); return; }
+        setMade({ state: 'failed', why: e?.message, progress: 0, file: null, link: null, isClean: clean });
+      });
+  }
+  // Once the video has its address (the effect on `file` below), and once only.
+  const autoStarted = useRef(false);
+  useEffect(() => { if (exportable && url && !autoStarted.current) { autoStarted.current = true; prepare(false, true); } }, [url]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A share that fails offers the video to save instead, and says so; one sheet at a time.
+  const [shareBroke, setShareBroke] = useState(false);
+  const shares = useRef(null);
+  shares.current ??= shareSheet();
+  const sharable = !shareBroke && made.file && typeof navigator.canShare === 'function' && navigator.canShare({ files: [made.file] });
+  // Nothing waits on the sheet (shareSheet.js): a sheet never answered, or any refusal but a cancel, offers the video to
+  // save instead.
+  function share() {
+    if (!shares.current.begin()) return;
+    track('share', { lift });
+    navigator.share({ files: [made.file] }).catch(e => { if (shares.current.failed(e)) setShareBroke(true); });
+  }
+
+  // The file is read where it lies on the phone; its address lives as long as the screen. Leaving, the video is
+  // unloaded (paused, its source removed, load()) so the browser drops its decoder and buffered frames at once rather
+  // than when the element is collected, and the overlay's canvas is emptied (crash investigation, 7 October, cause 5).
+  useEffect(() => {
+    if (!file) return undefined;
+    const address = URL.createObjectURL(file);
+    setUrl(address);
+    const video = videoRef.current;
+    return () => {
+      if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
+      URL.revokeObjectURL(address);
+    };
+  }, [file]);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    return () => { if (canvas) { canvas.width = 0; canvas.height = 0; } };
+  }, []);
+  // Focus goes to Back for the keyboard and screen readers, without painting the ring on a touch (#25).
+  useEffect(() => { backRef.current?.focus({ preventScroll: true, focusVisible: false }); }, []);
+  useEffect(() => { if (leaving) videoRef.current?.pause(); }, [leaving]);
+  useEffect(() => { if (videoRef.current) videoRef.current.playbackRate = slow ? 0.5 : 1; }, [slow]);
+
+  // The skeleton follows the frame on screen: redrawn with every video frame while the
+  // video plays, and after every seek.
+  useEffect(() => {
+    const video = videoRef.current, canvas = canvasRef.current;
+    if (!video || !canvas) return undefined;
+    // The time of the frame on screen, as the browser reports it with each frame it shows;
+    // fresh once a frame has been shown since the last seek began.
+    let raf = 0, vfc = 0, alive = true, told = 0, shown = null, fresh = false;
+    const draw = t => {
+      const cw = canvas.clientWidth, ch = canvas.clientHeight;
+      if (!cw || !ch) return;
+      const dpr = Math.min(3, window.devicePixelRatio || 1), W = Math.round(cw * dpr), H = Math.round(ch * dpr);
+      if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cw, ch);
+      const lm = poseAt(frames, times, t);
+      if (!lm) return;
+      // The picture sits in its box as object-fit: contain places it.
+      const vw = video.videoWidth || fw, vh = video.videoHeight || fh;
+      const s = Math.min(cw / vw, ch / vh);
+      const trails = trailPoints(def, sides).map(k => trailAt(frames, times, t, k, lm[k]));
+      drawSkeleton(ctx, lm, { ox: (cw - vw * s) / 2, oy: (ch - vh * s) / 2, w: vw * s, h: vh * s }, sides, def, 1, trails);
+    };
+    // The screen's words follow the video about ten times a second, and at once when it stops.
+    const tell = (t, force) => {
+      const at = performance.now();
+      if (force || at - told > 90) { told = at; setNow(t); }
+    };
+    const onFrame = (_, m) => {
+      if (!alive) return;
+      const t = m?.mediaTime ?? video.currentTime;
+      shown = t; fresh = true;
+      draw(t); tell(t);
+      vfc = video.requestVideoFrameCallback(onFrame);
+    };
+    const loop = () => {
+      if (!alive) return;
+      if (!video.paused) { draw(video.currentTime); tell(video.currentTime); }
+      raf = requestAnimationFrame(loop);
+    };
+    // After a seek or a pause, the body is drawn for the frame on screen, which can stand up to a
+    // frame before the time asked for; until the browser reports that frame, the time asked for.
+    const still = () => { const t = fresh && shown !== null ? shown : video.currentTime; draw(t); tell(t, true); };
+    const seeking = () => { fresh = false; };
+    const events = ['seeked', 'loadeddata', 'pause', 'ended'];
+    events.forEach(e => video.addEventListener(e, still));
+    video.addEventListener('seeking', seeking);
+    const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(still) : null;
+    if (resize) resize.observe(canvas); else window.addEventListener('resize', still);
+    if ('requestVideoFrameCallback' in video) vfc = video.requestVideoFrameCallback(onFrame);
+    else raf = requestAnimationFrame(loop);
+    return () => {
+      alive = false;
+      cancelAnimationFrame(raf);
+      if (vfc && 'cancelVideoFrameCallback' in video) video.cancelVideoFrameCallback(vfc);
+      events.forEach(e => video.removeEventListener(e, still));
+      video.removeEventListener('seeking', seeking);
+      if (resize) resize.disconnect(); else window.removeEventListener('resize', still);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The clock's events, as the <video> element's props would take them; declared after the drawing above, so its
+  // listeners are in place when the clock says it is ready and goes to the first rep.
+  useEffect(() => {
+    const c = clock.current;
+    if (file || !c) return undefined;
+    const on = () => setPlaying(true), off = () => setPlaying(false);
+    c.addEventListener('play', on); c.addEventListener('pause', off); c.addEventListener('ended', off);
+    c.loaded();
+    seekTo(reps[0] ? into(reps[0]) : 0);
+    return () => { c.removeEventListener('play', on); c.removeEventListener('pause', off); c.removeEventListener('ended', off); c.dispose(); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (leaving) clock.current?.pause(); }, [leaving]);
+
+  function play() {
+    const video = videoRef.current;
+    if (!video || broken) return;
+    video.playbackRate = slow ? 0.5 : 1;
+    video.play()?.catch(e => { if (e?.name === 'NotSupportedError') setBroken(true); });
+  }
+  function toggle() {
+    const video = videoRef.current;
+    // While the video is being prepared it plays for the recording: a tap would stop it. A preparation started by
+    // itself gives way: the tap stops it, and the controls are the person's again.
+    if (!video) return;
+    if (made.state === 'making') {
+      if (!made.auto) return;
+      abort.current?.abort();
+      setMade({ state: 'idle', progress: 0, file: null, link: null, isClean: false });
+      return;
+    }
+    if (video.paused || video.ended) play(); else video.pause();
+  }
+  function seekTo(t) {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = Math.max(0, Math.min(length, t));
+    setNow(video.currentTime);
+  }
+
+  // The line: a touch goes to the rep under the finger (or to that moment, between reps);
+  // a drag moves through the video.
+  const timeAt = x => { const r = lineRef.current.getBoundingClientRect(); return Math.max(0, Math.min(1, (x - r.left) / r.width)) * length; };
+  // While the video is being prepared it plays for the recording: a seek would hand over a cut file, a drag would stop it
+  // (live-app audit, 10 October 2026).
+  function down(e) {
+    if (broken || made.state === 'making') return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    drag.current = { x: e.clientX, moved: false, wasPlaying: !videoRef.current.paused };
+  }
+  function move(e) {
+    const d = drag.current;
+    if (!d || (!d.moved && Math.abs(e.clientX - d.x) < 6)) return;
+    if (!d.moved) { d.moved = true; videoRef.current.pause(); }
+    const t = timeAt(e.clientX);
+    seekTo(t);
+    const hit = repAt(reps, t);
+    if (hit !== lastVibrateRep.current) {
+      lastVibrateRep.current = hit;
+      if (hit >= 0) navigator.vibrate?.(5);
+    }
+  }
+  function up(e) {
+    const d = drag.current;
+    drag.current = null;
+    if (!d) return;
+    if (d.moved) { if (d.wasPlaying) play(); return; }
+    const t = timeAt(e.clientX);
+    let hit = -1, gap = Infinity;
+    reps.forEach((r, i) => {
+      if (t < r.startTime - 0.3 || t > r.endTime + 0.3) return;
+      const g = Math.abs(t - (r.startTime + r.endTime) / 2);
+      if (g < gap) { gap = g; hit = i; }
+    });
+    seekTo(hit >= 0 ? into(reps[hit]) : t);
+  }
+  // The line's keys: a rep at a time, either arrow pair or Page Up / Down; Home and End (replay-track.js, keyedTime).
+  function keys(e) {
+    if (made.state === 'making') return;
+    const t = keyedTime(e.key, reps, now, length);
+    if (t === null) return;
+    e.preventDefault();
+    navigator.vibrate?.(5);
+    seekTo(t);
+  }
+
+  const NB = ' ', sec = x => `${decimal(x, fr)}${NB}s`;
+  const current = repAt(reps, now);
+  // The number rises when a rep ends, as a coach counts (repsDone, replay-track.js; 18 November 2026).
+  const begun = repsDone(reps, now, length);
+  // The rep's measures (its range, times, phase and angle) are shown with the measures (measures.js), and for a set the
+  // body check flagged only once its count is saved (saved: the person answered), as its result, report, history and
+  // export show them (saved-set.js keepsMeasures, R8); before that, each rep's number alone (honesty pass, second round,
+  // 14 October 2026).
+  const measured = MEASURES_SHOWN && keepsMeasures(result, saved !== null);
+  // Once shown on a set the body check flagged, its measures carry the card's caution line (c.bodyDoubt), word for word.
+  const doubted = measured && !result.refused && result.count > 0 && result.bodyCheck?.flagged === true;
+  // The phase word follows the unvalidated phase boundaries: hidden with the measures.
+  const phase = measured && current >= 0 ? phaseAt(reps[current], now, def?.first) : null;
+  const isTransition = measured && current >= 0 && !phase && !reps[current]?.clipped;
+  const curAngle = angleAt ? angleAt(smoothedAngles, times, now) : null;
+
+  // The unvalidated readings (measures.js UNVALIDATED_BIOMECHANICS_SHOWN): computed and drawn only when that switch is on.
+  const advanced = measured && UNVALIDATED_BIOMECHANICS_SHOWN;
+  const stickingPoints = useMemo(() => {
+    if (!advanced || !reps.length) return [];
+    const continuousAngles = result.smoothedAngles || result.angles || [];
+    if (!continuousAngles.length) return [];
+    try {
+      return detectSetStickingPoints(reps, continuousAngles, times, lift);
+    } catch {
+      return [];
+    }
+  }, [result, reps, times, lift, advanced]);
+
+  const kineticSequencing = useMemo(() => {
+    if (!advanced || !reps.length) return null;
+    const landmarks = result.worldLandmarks || result.landmarks || result.imageLandmarks;
+    if (!landmarks || !landmarks.length) return null;
+    try {
+      return analyzeKineticChainSequencing(landmarks, times, lift, reps);
+    } catch {
+      return null;
+    }
+  }, [result, reps, times, lift, advanced]);
+
+  const lumbopelvic = useMemo(() => {
+    if (!advanced || !reps.length) return null;
+    const landmarks = result.worldLandmarks || result.landmarks || result.imageLandmarks;
+    if (!landmarks || !landmarks.length) return null;
+    try {
+      return analyzeLumbopelvicRhythm(landmarks, times, lift, reps);
+    } catch {
+      return null;
+    }
+  }, [result, reps, times, lift, advanced]);
+
+  const barbellTilt = useMemo(() => {
+    if (!advanced || !reps.length) return null;
+    const landmarks = result.landmarks || result.imageLandmarks || result.worldLandmarks;
+    if (!landmarks || !landmarks.length) return null;
+    try {
+      return analyzeBarbellTilt(landmarks, times, { lift });
+    } catch {
+      return null;
+    }
+  }, [result, reps, times, lift, advanced]);
+
+  const scapularPlane = useMemo(() => {
+    if (!advanced || !reps.length) return null;
+    const landmarks = result.landmarks || result.imageLandmarks || result.worldLandmarks;
+    if (!landmarks || !landmarks.length) return null;
+    try {
+      return analyzeScapularPlane(landmarks, times, { lift });
+    } catch {
+      return null;
+    }
+  }, [result, reps, times, lift, advanced]);
+  let head = '', detail;
+  if (current >= 0) {
+    const r = reps[current];
+    const word = corrected ? markLabel({ index: current + 1, total: reps.length, fr, corrected }) : `${fr ? 'Rép.' : 'Rep'} ${current + 1}`;
+    const filmed = fr ? (corrected ? 'filmé en partie' : 'filmée en partie') : 'partly filmed';
+    head = `${word} · `;
+    // Without the measures (measured, above), the rep's number alone.
+    if (!measured) { head = ''; detail = `${word}${r.clipped ? `${NB}· ${filmed}` : ''}`; }
+    else detail = r.clipped
+      ? `${Math.round(r.romDegrees)}°${NB}· ${filmed}`
+      : partialIn(reps)(r)
+      ? `${Math.round(r.romDegrees)}°${NB}· ${fr ? (corrected ? 'non chronométré' : 'non chronométrée') : 'not timed'}`
+      : `${sec(r.endTime - r.startTime)}${NB}· ${Math.round(r.romDegrees)}°${NB}· conc.${NB}${sec(r.concentricSec)}${NB}· ${fr ? 'exc.' : 'ecc.'}${NB}${sec(r.eccentricSec)}`;
+  } else {
+    detail = reps.length
+      ? (corrected
+        ? (fr ? 'Touchez un repère sur la ligne pour le revoir.' : 'Touch a mark on the line to see it again.')
+        : (fr ? 'Touchez une répétition sur la ligne pour la revoir.' : 'Touch a rep on the line to see it again.'))
+      : result.refused
+        ? (fr ? 'Cette série n’a pas pu être comptée.' : 'This set could not be counted.')
+        : (fr ? 'Aucune répétition comptée dans cette vidéo.' : 'No rep counted in this video.');
+  }
+  // Between the two phases of a rep, the turn is a pause, said so ("Inflexion" was no gym word; honesty audit of 14 October
+  // 2026, CORE-12). Awaiting David's approval of the word (R10).
+  const phaseWord = { concentric: fr ? 'Concentrique' : 'Concentric', eccentric: fr ? 'Excentrique' : 'Eccentric' }[phase] || (isTransition ? 'Pause' : NB);
+
+  // The chip's angle is the core's, read in 3D (the number the count reads), named by its joint; the picture draws no 2D
+  // angle beside it, which disagreed with it (replay-draw.js). Shown with the measures only (measures.js).
+  const JOINT_WORD = { elbow: ['Coude', 'Elbow'], shoulder: ['Épaule', 'Shoulder'], knee: ['Genou', 'Knee'], hip: ['Hanche', 'Hip'] };
+  const jointWord = JOINT_WORD[def?.joint]?.[fr ? 0 : 1] ?? null;
+  // The limb's end whose recent path the gold trail draws (replay-draw.js trailPoints: the joint's third point).
+  const END_WORD = { elbow: ['du poignet', 'wrist'], shoulder: ['du coude', 'elbow'], knee: ['de la cheville', 'ankle'], hip: ['du genou', 'knee'] };
+  const endWord = END_WORD[def?.joint]?.[fr ? 0 : 1] ?? null;
+
+  return <div className={`wv-experience${leaving ? ' is-leaving' : ''}`}>
+    <section className="screen is-active replay-screen" aria-label={`${fr ? 'Revoir la série' : 'Replay of the set'} · ${liftName}`}><div className="wrap">
+      <div className="topbar">
+        <button ref={backRef} className="icon-btn press" onClick={onBack} aria-label={fr ? 'Retour' : 'Back'}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
+        </button>
+        <span className="pill">{fr ? 'Version de test' : 'Test version'}</span>
+      </div>
+      <div className="rp-stage" data-reveal style={{ '--i': 0 }}>
+        {mocapMode ? (
+          <MocapViewer worldLandmarks={result.worldLandmarks || null} lift={lift} fr={fr} />
+        ) : (
+          <div className="rp-frame" style={{ '--ar': fw / fh }}>
+            {file ? <video ref={videoRef} className="rp-video" src={url || undefined} playsInline muted preload="auto"
+              aria-label={fr ? 'Votre série, avec le squelette suivi par l’appli' : 'Your set, with the skeleton the app tracked'}
+              onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} onError={() => setBroken(true)}
+              onLoadedMetadata={e => { const d = e.currentTarget.duration; if (Number.isFinite(d) && d > 0) setLength(d); seekTo(reps[0] ? into(reps[0]) : 0); }}
+              onClick={toggle} />
+              : <div className="rp-video rp-still" role="img" data-testid="rp-still" onClick={toggle}
+                aria-label={fr ? 'Votre série comptée en direct, rejouée avec le squelette suivi par l’appli' : 'Your set counted live, replayed with the skeleton the app tracked'} />}
+            <canvas ref={canvasRef} className="rp-canvas" aria-hidden="true" />
+            {showBarPath && (
+              <BarPathTracer
+                frames={frames}
+                timestamps={times}
+                currentTime={now}
+                active={showBarPath}
+                lang={lang}
+              />
+            )}
+            {kineticSequencing?.hipShootDetected && (
+              <div className="rp-fault-banner" data-testid="rp-kinetic-fault-banner">
+                <span className="rp-fault-dot" aria-hidden="true" />
+                <span>{fr ? kineticSequencing.cueFr : kineticSequencing.cueEn}</span>
+              </div>
+            )}
+            {lumbopelvic?.buttWinkDetected && (
+              <div className="rp-fault-banner rp-spine-fault" data-testid="rp-lumbopelvic-fault-banner">
+                <span className="rp-fault-dot" aria-hidden="true" />
+                <span>{fr ? lumbopelvic.cueFr : lumbopelvic.cueEn}</span>
+              </div>
+            )}
+            {barbellTilt?.isTiltFault && (
+              <div className="rp-fault-banner rp-tilt-fault" data-testid="rp-barbell-tilt-fault-banner">
+                <span className="rp-fault-dot" aria-hidden="true" />
+                <span>{fr ? barbellTilt.cueFr : barbellTilt.cueEn}</span>
+              </div>
+            )}
+            {(scapularPlane?.shrugDetected || scapularPlane?.eccentricDropDetected) && (
+              <div className="rp-fault-banner rp-scapular-fault" data-testid="rp-scapular-fault-banner">
+                <span className="rp-fault-dot" aria-hidden="true" />
+                <span>{fr ? scapularPlane.cueFr : scapularPlane.cueEn}</span>
+              </div>
+            )}
+            {reps.length > 0 && <div className={`rp-chip${phaseWord === NB ? ' is-idle' : ''}`} aria-hidden="true">
+              <span className="rp-count"><span className="rp-n">{begun}</span><span className="rp-of">/{NB}{reps.length}</span></span>
+              <span className="rp-phase">{phaseWord}</span>
+              {measured && curAngle !== null && jointWord && <span className="rp-angle" data-testid="rp-angle">{jointWord}{NB}{Math.round(curAngle)}°</span>}
+            </div>}
+            {measured && curAngle !== null && (result.joints || advanced) && (
+              <div className="rc-stage-hud" data-testid="rc-stage-hud">
+                {result.joints ? (
+                  result.joints.map((j, k) => {
+                    const seenAtNow = result.seen?.[k]?.[now];
+                    const attVal = seenAtNow && result.matched?.[k]?.[now] != null ? Math.round(result.matched[k][now]) : null;
+                    const refVal = result.reference?.[k]?.[now] != null ? Math.round(result.reference[k][now]) : null;
+                    const diff = attVal != null && refVal != null ? attVal - refVal : null;
+                    const inTol = diff != null ? Math.abs(diff) <= 15 : null;
+                    const sign = diff != null && diff > 0 ? '+' : '';
+                    return (
+                      <div key={j.name} className={`rc-hud-item ${inTol === false ? 'is-off' : inTol === true ? 'is-ok' : 'is-unseen'}`} data-testid={`rc-hud-${j.name}`}>
+                        <span className="rc-hud-name">{j.name}</span>
+                        {attVal != null && refVal != null ? (
+                          <>
+                            <span className="rc-hud-angles">{attVal}° / {refVal}°</span>
+                            <span className="rc-hud-delta">{sign}{diff}°</span>
+                          </>
+                        ) : attVal != null ? (
+                          <span className="rc-hud-angles">{attVal}°</span>
+                        ) : (
+                          <span className="rc-hud-unseen">{fr ? 'Non visible' : 'Not seen'}</span>
+                        )}
+                      </div>
+                    );
+                  })
+                ) : !advanced ? null : (
+                  (() => {
+                    const attVal = Math.round(curAngle);
+                    const TARGET_MAP = {
+                      bicep_curl: { inflection: 60, rest: 150 },
+                      bicep_curl_alternating: { inflection: 60, rest: 150 },
+                      lat_pulldown: { inflection: 60, rest: 150 },
+                      seated_row: { inflection: 60, rest: 150 },
+                      dumbbell_row: { inflection: 60, rest: 150 },
+                      triceps_pushdown: { inflection: 160, rest: 70 },
+                      bench_press: { inflection: 80, rest: 165 },
+                      overhead_press: { inflection: 165, rest: 75 },
+                      lateral_raise: { inflection: 85, rest: 15 },
+                      squat: { inflection: 90, rest: 165 },
+                    };
+                    const targetConfig = TARGET_MAP[lift] || (def?.rest === 'high' ? { inflection: 70, rest: 160 } : { inflection: 90, rest: 30 });
+                    const targetAngle = (current >= 0 && (phase === def?.first || isTransition || !phase)) ? targetConfig.inflection : targetConfig.rest;
+                    const diff = attVal - targetAngle;
+                    const inTol = Math.abs(diff) <= 15;
+                    const sign = diff > 0 ? '+' : '';
+                    const lm = poseAt(frames, times, now);
+                    let secondary = null;
+                    if (def?.joint === 'knee' && lm && lm[11] && lm[23] && (lm[11].visibility ?? 0) > 0.5 && (lm[23].visibility ?? 0) > 0.5) {
+                      const dx = lm[11].x - lm[23].x, dy = lm[11].y - lm[23].y;
+                      const lean = Math.round(Math.abs(Math.atan2(dx, -dy) * 180 / Math.PI));
+                      const torsoTarget = 30;
+                      const torsoDiff = lean - torsoTarget;
+                      const torsoOk = Math.abs(torsoDiff) <= 15;
+                      const torsoSign = torsoDiff > 0 ? '+' : '';
+                      secondary = (
+                        <div key="torso" className={`rc-hud-item ${torsoOk ? 'is-ok' : 'is-off'}`} data-testid="rc-hud-torso">
+                          <span className="rc-hud-name">{fr ? 'Buste' : 'Torso'}</span>
+                          <span className="rc-hud-angles">{lean}° / {torsoTarget}°</span>
+                          <span className="rc-hud-delta">{torsoSign}{torsoDiff}°</span>
+                        </div>
+                      );
+                    } else if (def?.joint === 'elbow' && lm && lm[11] && lm[13] && (lm[11].visibility ?? 0) > 0.5 && (lm[13].visibility ?? 0) > 0.5) {
+                      const dx = lm[13].x - lm[11].x, dy = lm[13].y - lm[11].y;
+                      const sway = Math.round(Math.abs(Math.atan2(dx, dy) * 180 / Math.PI));
+                      const swayTarget = 10;
+                      const swayDiff = sway - swayTarget;
+                      const swayOk = sway <= 15;
+                      const swaySign = swayDiff > 0 ? '+' : '';
+                      secondary = (
+                        <div key="shoulder" className={`rc-hud-item ${swayOk ? 'is-ok' : 'is-off'}`} data-testid="rc-hud-shoulder">
+                          <span className="rc-hud-name">{fr ? 'Épaule' : 'Shoulder'}</span>
+                          <span className="rc-hud-angles">{sway}° / {swayTarget}°</span>
+                          <span className="rc-hud-delta">{swaySign}{swayDiff}°</span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <>
+                        <div className={`rc-hud-item ${inTol ? 'is-ok' : 'is-off'}`} data-testid="rc-hud-primary">
+                          <span className="rc-hud-name">{jointWord || (fr ? 'Angle' : 'Angle')}</span>
+                          <span className="rc-hud-angles">{attVal}° / {targetAngle}°</span>
+                          <span className="rc-hud-delta">{sign}{diff}°</span>
+                        </div>
+                        {secondary}
+                        {lumbopelvic && (
+                          <div
+                            key="lumbopelvic"
+                            className={`rc-hud-item ${lumbopelvic.tier === 'neutral' ? 'is-ok' : 'is-off'}`}
+                            data-testid="rc-hud-lumbopelvic"
+                          >
+                            <span className="rc-hud-name">{fr ? 'Rachis' : 'Spine'}</span>
+                            <span className="rc-hud-angles">{lumbopelvic.lsiPercent}% LSI</span>
+                            <span className="rc-hud-delta">{lumbopelvic.maxFlexionExcursionDeg}°</span>
+                          </div>
+                        )}
+                        {barbellTilt && (
+                          <div
+                            key="barbellTilt"
+                            className={`rc-hud-item ${barbellTilt.verdict === 'optimal' ? 'is-ok' : 'is-off'}`}
+                            data-testid="rc-hud-barbell-tilt"
+                          >
+                            <span className="rc-hud-name">{fr ? 'Barre' : 'Bar'}</span>
+                            <span className="rc-hud-angles">{barbellTilt.planarStabilityIndex}% PSI</span>
+                            <span className="rc-hud-delta">{barbellTilt.maxTiltDeg}°</span>
+                          </div>
+                        )}
+                        {scapularPlane && (
+                          <div
+                            key="scapularPlane"
+                            className={`rc-hud-item ${scapularPlane.verdict === 'optimal' ? 'is-ok' : 'is-off'}`}
+                            data-testid="rc-hud-scapular-plane"
+                          >
+                            <span className="rc-hud-name">{fr ? 'Scapula' : 'Scapula'}</span>
+                            <span className="rc-hud-angles">{scapularPlane.scapularStabilityIndex}% SPSI</span>
+                            <span className="rc-hud-delta">{scapularPlane.classification}</span>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()
+                )}
+              </div>
+            )}
+            {broken && <p className="rp-broken" role="alert">{fr ? 'Cette vidéo ne se lit pas dans ce navigateur.' : 'This video does not play in this browser.'}</p>}
+          </div>
+        )}
+      </div>
+      <div ref={lineRef} className="rp-line" role="slider" tabIndex={0}
+        aria-label={fr ? 'Position dans la vidéo' : 'Position in the video'}
+        aria-valuemin={0} aria-valuemax={Math.round(length * 10) / 10} aria-valuenow={Math.round(now * 10) / 10}
+        aria-valuetext={current >= 0 ? markLabel({ index: current + 1, total: reps.length, fr, corrected }) : sec(now)}
+        onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { drag.current = null; }} onKeyDown={keys}>
+        {reps.map((r, i) => {
+          const from = Math.min(100, (r.startTime / length) * 100), to = Math.min(100, (r.endTime / length) * 100);
+          return <span key={r.index ?? i} className={`rp-rep${i === current ? ' is-on' : ''}`} style={{ left: `${Math.min(from, 99.2)}%`, width: `${Math.max(0.8, to - from)}%` }} />;
+        })}
+        {stickingPoints.map((pin, idx) => {
+          const pos = Math.min(99.5, Math.max(0.5, (pin.timestamp / length) * 100));
+          const isActive = Math.abs(now - pin.timestamp) <= 0.35;
+          return (
+            <span
+              key={`sp-${pin.repIndex}-${idx}`}
+              className={`rp-inflection-pin rp-stickingpin${isActive ? ' is-active' : ''}`}
+              data-testid="rp-stickingpin"
+              style={{ left: `${pos}%` }}
+              title={fr ? `Point d'inflexion rép ${pin.repIndex}\u00A0: ${Math.round(pin.angleDeg)}°` : `Concentric inflection rep ${pin.repIndex}: ${Math.round(pin.angleDeg)}°`}
+            />
+          );
+        })}
+        <i className="rp-now" style={{ left: `${Math.min(100, (now / length) * 100)}%` }} />
+      </div>
+      {note && <p className="rp-prov" data-testid="rp-prov">{note}</p>}
+      <p className="rp-detail" aria-live={playing ? 'off' : 'polite'}>{head && <span className="sr">{head}</span>}{detail}</p>
+      {doubted && reps.length > 0 && <p className="rp-prov" data-testid="rp-doubted">{RESULT[fr ? 'fr' : 'en'].bodyDoubt(jointName(def?.joint, fr))}</p>}
+      {measured && reps.length > 0 && <p className="rp-prov" data-testid="rp-exp">{experimentalLabel(fr)}</p>}
+      <div className="rp-controls" data-reveal style={{ '--i': 2 }}>
+        <button className="btn-primary press rp-play" onClick={toggle} disabled={broken || (made.state === 'making' && !made.auto)}>
+          {playing
+            ? <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
+            : <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.9l10-6.5a1 1 0 0 0 0-1.7l-10-6.5A1 1 0 0 0 8 5.5z" /></svg>}
+          <span>{playing ? 'Pause' : (fr ? 'Lire' : 'Play')}</span>
+        </button>
+        <button className={`btn-ghost press rp-slow${slow ? ' is-on' : ''}`} aria-pressed={slow} disabled={broken || made.state === 'making'} onClick={() => setSlow(s => !s)}>{fr ? 'Ralenti' : 'Slow motion'}</button>
+      </div>
+      {/* The two other views of the same set sit under the playback controls, not above the picture (David, 11 November 2026). */}
+      <div className="rp-views" data-reveal style={{ '--i': 2 }}>
+        <button type="button" className={`btn-ghost press rp-slow${mocapMode ? ' is-on' : ''}`} aria-pressed={mocapMode} onClick={() => setMocapMode(m => !m)} data-testid="rp-mocap-toggle">{fr ? 'Vue 3D' : '3D view'}</button>
+        {hasBar && <button type="button" className={`btn-ghost press rp-slow${showBarPath ? ' is-on' : ''}`} aria-pressed={showBarPath} disabled={broken || mocapMode} onClick={() => setShowBarPath(p => !p)} data-testid="rp-barpath-toggle">{fr ? 'Trajectoire de la barre' : 'Bar path'}</button>}
+      </div>
+      {exportable && <div className="rp-export">
+        {/* One action to share (card 004, walk of 11 November 2026); the video without text is a choice beside it. */}
+        {(made.state === 'idle' || made.state === 'failed') && <div className="rp-export-actions">
+          <button className="btn-line press" onClick={() => prepare(false)}>{fr ? 'Préparer la vidéo à partager' : 'Prepare the video to share'}</button>
+        </div>}
+        {made.state === 'making' && <button className="btn-line" disabled>{fr ? `Préparation de la vidéo… ${Math.round(made.progress * 100)} %` : `Preparing the video… ${Math.round(made.progress * 100)}%`}</button>}
+        {made.state === 'ready' && (sharable
+          ? <button className="btn-line press" onClick={share}>{fr ? (made.isClean ? 'Partager la vidéo brute' : 'Partager la vidéo') : (made.isClean ? 'Share clean video' : 'Share the video')}</button>
+          : <a className="btn-line press" href={made.link} download={made.file.name}>{fr ? (made.isClean ? 'Enregistrer la vidéo brute' : 'Enregistrer la vidéo') : (made.isClean ? 'Save clean video' : 'Save the video')}</a>)}
+        {made.state !== 'making' && <button type="button" className="text-btn press rp-clean-btn" data-testid="rp-export-clean" onClick={() => prepare(!made.isClean || made.state !== 'ready')}>
+          {made.state === 'ready' && made.isClean
+            ? (fr ? 'Revenir à la vidéo avec le compte' : 'Back to the video with the count')
+            : (fr ? 'Ou la vidéo sans texte, pour une story' : 'Or the video without text, for a story')}
+        </button>}
+        {made.state === 'ready' && shareBroke && <p className="rp-export-note" role="status">{fr ? 'Le partage n’a pas abouti. Enregistrez la vidéo, puis partagez-la depuis vos fichiers.' : 'The share did not go through. Save the video, then share it from your files.'}</p>}
+        {made.state === 'failed' && <p className="rp-export-note" role="alert">{made.why === 'interrupted' || made.why === 'stalled' || made.why === 'incomplete'
+          ? (fr ? 'La préparation s’est arrêtée. Gardez l’écran allumé et l’appli ouverte, puis réessayez.' : 'The preparation stopped. Keep the screen on and the app open, then try again.')
+          : (fr ? 'La vidéo n’a pas pu être préparée sur ce téléphone.' : 'The video could not be prepared on this phone.')}</p>}
+      </div>}
+      {/* The legend names every mark on the picture, and only those (honesty audit of 14 October 2026, CORE-12): the gold
+          joint and the gold trail of its limb's end, for an exercise the core counts; for one it does not (no lift
+          definition: nothing is lit, universalProposal.js), the skeleton alone, said to be the app's estimate; the angle
+          in the chip at the top left, estimated in 3D, when the chip shows it. Awaiting David's approval of the new words (R10). */}
+      <p className="rp-note" data-reveal style={{ '--i': 3 }} data-testid="rp-legend">
+        {def
+          ? <>{fr ? 'En doré, l’articulation dont l’angle compte les répétitions' : 'In gold, the joint whose angle counts the reps'}
+            {endWord ? (fr ? `, et le trajet récent ${endWord}.` : `, and the recent path of the ${endWord}.`) : '.'}</>
+          : (fr ? 'Le squelette est une estimation de l’appli.' : 'The skeleton is the app’s estimate.')}
+        {measured && reps.length > 0 && smoothedAngles.length > 0 && jointWord ? (fr ? ` En haut à gauche, l’angle ${jointName(def?.joint, true)}, estimé en 3D\u00A0: il peut différer de ce que montre l’image.` : ` Top left, the ${jointName(def?.joint, false)} angle, estimated in 3D: it can differ from what the picture shows.`) : ''}
+        {' '}{file
+          ? (fr ? 'La vidéo ne quitte votre téléphone que si vous la partagez.' : 'The video leaves your phone only if you share it.')
+          : (fr ? 'Série comptée en direct\u00A0: aucune vidéo n’a été enregistrée, seul le squelette est rejoué.' : 'Counted live: no video was recorded, only the skeleton is replayed.')}
+      </p>
+    </div></section>
+  </div>;
+}

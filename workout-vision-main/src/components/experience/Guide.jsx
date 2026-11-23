@@ -1,0 +1,166 @@
+import { useEffect, useRef, useState } from 'react';
+import { MUSCLE_FR, norm, searchMatch, searchWords } from './search-text';
+import { useT } from '../../lib/LanguageContext';
+import { getAllGuideExercises } from '../../lib/exerciseGuide';
+import { Body, mapPose, DPR } from './entry-scene';
+import entry from './entry-pose.json';
+import { tierLabel, tierTag } from '../../lib/liftTiers';
+import { isOffered, tierOf } from '../../lib/offer';
+import './Guide.css';
+import './Level.css';
+import { useCondensingTopbar } from './topbar';
+import { hasGuideFigure } from './guide-figure';
+import stillKeys from './guide-svg-keys.json';
+import { GuideFigure } from './GuideFigure';
+import { filmingGuideFor } from './filming-guide';
+import { baseKey } from '../../lib/variant-key';
+
+function FilmingPlacement({ exerciseKey, fr }) {
+  const info = filmingGuideFor(exerciseKey, fr);
+  return <p className="guide-placement" data-testid="guide-filming-note">
+    <strong>{fr ? 'Placement\u00A0:' : 'Camera:'}</strong> {info.angleLabel} · {info.framingLabel}.
+  </p>;
+}
+
+const CATALOGUE = getAllGuideExercises();
+const ZONES = { front: ['shoulders', 'chest', 'biceps', 'abs', 'quads'], back: ['back', 'triceps', 'lowerback', 'glutes', 'hamstrings', 'calves'] };
+const ZONE_NAMES = {
+ fr: { shoulders: 'Épaules', chest: 'Pectoraux', biceps: 'Biceps', abs: 'Abdominaux', quads: 'Cuisses', back: 'Dos', triceps: 'Triceps', lowerback: 'Lombaires', glutes: 'Fessiers', hamstrings: 'Ischios', calves: 'Mollets' },
+ en: { shoulders: 'Shoulders', chest: 'Chest', biceps: 'Biceps', abs: 'Abs', quads: 'Thighs', back: 'Back', triceps: 'Triceps', lowerback: 'Lower back', glutes: 'Glutes', hamstrings: 'Hamstrings', calves: 'Calves' }
+};
+const MUSCLES = { shoulders: ['Shoulders', 'Rear Delts'], chest: ['Chest'], biceps: ['Biceps', 'Forearms', 'Grip'], abs: ['Core'], quads: ['Quads', 'Legs', 'Adductors', 'Groin', 'Hips'], back: ['Back', 'Lats', 'Upper Back'], triceps: ['Triceps'], lowerback: ['Lower Back', 'Posterior Chain'], glutes: ['Glutes'], hamstrings: ['Hamstrings'], calves: ['Calves'] };
+export const EQUIPMENT = { Barbell: 'Barre', Bench: 'Banc', Bodyweight: 'Poids du corps', Box: 'Banc / box', Cable: 'Poulie', Cardio: 'Cardio', Chair: 'Chaise', Doorway: 'Encadrement de porte', Dumbbell: 'Haltères', Kettlebell: 'Kettlebell', Machine: 'Machine', 'Medicine Ball': 'Médecine-ball', Plate: 'Disque', 'Pull-up Bar': 'Barre de traction', 'Resistance Band': 'Élastique', Sandbag: 'Sac lesté', 'Stability Ball': 'Ballon', Towel: 'Serviette', Wall: 'Mur' };
+const inZone = (e, zone) => !zone || e.muscles.some(m => MUSCLES[zone].includes(m));
+// Each exercise's words for the search (search-text.js), cut once: its names, equipment, zones and muscles.
+const WORDS = new Map(CATALOGUE.map(e => [e.key, searchWords([e.fr, e.name, ...e.aliases, e.equipment, EQUIPMENT[e.equipment], ...Object.keys(MUSCLES).filter(z => inZone(e, z)).flatMap(z => [ZONE_NAMES.fr[z], ZONE_NAMES.en[z]]), ...e.muscles, ...e.muscles.map(m => MUSCLE_FR[m] || '')].join(' '))]));
+const countedLift = e => e.key;
+
+function BodyMap() {
+  const canvas = useRef(null);
+  useEffect(() => {
+    const c = canvas.current, ctx = c?.getContext?.('2d');
+    if (!c || !ctx) return undefined;
+    const body = new Body(1500, 31), out = new Float32Array(66);
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let frame, stopped = false, seen = true;
+    function draw(now) {
+      const W = c.width, H = c.height;
+      ctx.clearRect(0, 0, W, H);
+      mapPose(new Float32Array(entry.p), entry.vb, { x: W * 0.05, y: H * 0.05, w: W * 0.9, h: H * 0.9 }, out);
+      body.draw(ctx, out, { alpha: 0.72, time: reduced ? 1.5 : now / 1000, dpr: DPR, size: 0.75, stars: 0.6 });
+    }
+    function resize() { c.width = c.clientWidth * DPR; c.height = c.clientHeight * DPR; draw(performance.now()); }
+    function loop(now) { if (stopped || !seen) return; draw(now); frame = requestAnimationFrame(loop); }
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(resize) : null;
+    observer?.observe(c);
+    resize();
+    if (!reduced) frame = requestAnimationFrame(loop);
+    // Scrolled out of view, the figure stops drawing: the list scrolls with the whole frame budget.
+    const io = reduced || typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(entries => {
+      const visible = entries[entries.length - 1].isIntersecting;
+      if (visible === seen) return;
+      seen = visible;
+      if (seen) frame = requestAnimationFrame(loop); else cancelAnimationFrame(frame);
+    });
+    io?.observe(c);
+    return () => { stopped = true; cancelAnimationFrame(frame); observer?.disconnect(); io?.disconnect(); };
+  }, []);
+  return <canvas ref={canvas} aria-hidden="true" />;
+}
+/** The small drawing beside a name; an empty frame for an exercise with no drawing (exerciseGuide.js, noDrawing). */
+// An exercise with a figure of the app shows its still SVG (scripts/make-guide-svgs.mjs, public/guide-svg/; David,
+// 19 October 2026), tinted through a mask so it takes the theme's colour; the others keep the guide's drawing.
+const FIG_BASE = `${import.meta.env.BASE_URL || '/'}guide-svg/`;
+const STILLS = new Set(stillKeys);
+// A variant without a still of its own shows its base's (variant-key.js).
+const stillOf = key => (STILLS.has(key) ? key : STILLS.has(baseKey(key)) ? baseKey(key) : null);
+export function Thumb({ exercise }) {
+  if (stillOf(exercise.key)) return <span className="thumb"><i className="thumb-fig" style={{ '--fig': `url("${FIG_BASE}${stillOf(exercise.key)}.svg")` }} aria-hidden="true" /></span>;
+  return <span className="thumb">{exercise.frames[0] ? <img src={exercise.frames[0]} loading="lazy" width="56" height="56" alt="" /> : <i className="thumb-none" aria-hidden="true" />}</span>;
+}
+export function GuideFrames({ exercise, fr }) {
+  const [active, setActive] = useState(0);
+  // An exercise with an animated figure (GuideFigure.jsx) shows it in place of the guide's drawings; one with no
+  // fitting drawing (noDrawing) keeps its movement in words under the figure.
+  const animated = hasGuideFigure(exercise.key);
+  useEffect(() => {
+    if (animated || exercise.frames.length < 2 || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const timer = setInterval(() => setActive(n => (n + 1) % exercise.frames.length), 800);
+    return () => clearInterval(timer);
+  }, [exercise, animated]);
+  if (animated) return <><div className="guide-frames guide-animated"><GuideFigure exercise={exercise.key} /></div>
+    {exercise.noDrawing && exercise.how ? <p className="guide-how-text" data-testid="guide-how">{fr ? exercise.how.fr : exercise.how.en}</p> : null}</>;
+  // No drawing: the movement in words, in the frame the drawing would fill.
+  if (!exercise.frames.length) return <div className="guide-frames guide-how" data-testid="guide-how"><p>{exercise.how ? (fr ? exercise.how.fr : exercise.how.en) : ''}</p></div>;
+  return <div className="guide-frames">{exercise.frames.map((src, i) => <img key={src} className={i === active ? 'active' : ''} src={src} width="320" height="320" loading="lazy" alt={`${exercise.fr} / ${exercise.name} - ${i + 1}`} />)}</div>;
+}
+/**
+ * lift: the exercise a beginner is about to film (level.js, until three sets are saved): the guide
+ * opens on that one exercise, its drawings and the way on to filming; the whole guide is one tap away.
+ */
+export default function Guide({ onClose, onChoose, lift }) {
+  const { lang, setLang } = useT(), fr = lang === 'fr';
+  const [query, setQuery] = useState(''), [zone, setZone] = useState(null), [view, setView] = useState('front'), [open, setOpen] = useState(null);
+  const [focus, setFocus] = useState(() => { const e = lift ? CATALOGUE.find(x => x.key === lift) : null; return e && countedLift(e) ? e : null; });
+  // An exercise the guide does not hold goes straight on to filming, never to the whole catalogue.
+  const [missing] = useState(() => !!lift && !focus);
+  // The title condenses into the topbar as the list scrolls under it (section 3, change 1).
+  const screenRef = useRef(null);
+  useCondensingTopbar(screenRef, [!!focus, lang]);
+  useEffect(() => { if (missing) onChoose(lift); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!focus) { screenRef.current?.scrollTo?.(0, 0); window.scrollTo?.(0, 0); } }, [focus]);
+  if (missing) return <div className="wv-experience" aria-busy="true" />;
+  if (focus) return <div className="wv-experience">
+    <section ref={screenRef} className="screen is-active guide-screen"><div className="wrap">
+      <div className="topbar"><button className="icon-btn press" onClick={onClose} aria-label={fr ? 'Retour' : 'Back'}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg></button><span className="pill">{fr ? 'Version de test' : 'Test version'}</span></div>
+      <h1 className="title" data-reveal style={{ '--i': 0 }}>{fr ? 'Le geste, avant de filmer.' : 'The movement, before you film.'}</h1>
+      <p className="sub" data-reveal style={{ '--i': 1 }}>{fr ? 'Regardez le mouvement, puis filmez votre série. Ce guide s’affiche avant vos trois premières séries.' : 'Watch the movement, then film your set. This guide shows before your first three sets.'}</p>
+      <div className="guide-focus" data-testid="guide-focus" data-reveal style={{ '--i': 2 }}>
+        <p className="item-name">{fr ? focus.fr : focus.name}</p>
+        <GuideFrames exercise={focus} fr={fr} />
+        <FilmingPlacement exerciseKey={focus.key} fr={fr} />
+        <button className="btn-primary press" onClick={() => onChoose(focus.key)}>{fr ? 'Filmer cet exercice' : 'Film this exercise'}</button>
+        <button className="btn-ghost is-s press" onClick={() => setFocus(null)}>{fr ? 'Tous les exercices' : 'All exercises'}</button>
+      </div>
+      <p className="guide-credit">{fr ? 'Illustrations\u00A0:' : 'Illustrations:'} Everkinetic, via <a href="https://github.com/bryllim/workout-guide" target="_blank" rel="noreferrer">bryllim/workout-guide</a>, <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a>. {fr ? 'Redimensionnées et converties en WebP.' : 'Resized and converted to WebP.'}</p>
+    </div></section>
+  </div>;
+  const nq = norm(query.trim());
+  const isDirectTitle = e => !!nq && (norm(e.fr) === nq || norm(e.name) === nq);
+  const list = CATALOGUE.filter(e => inZone(e, zone)).filter(e => searchMatch(WORDS.get(e.key), query))
+    .sort((a, b) => (isDirectTitle(b) - isDirectTitle(a)) || ((tierOf(b.key) === 'beta') - (tierOf(a.key) === 'beta')));
+  function pickZone(z) { setZone(previous => previous === z ? null : z); setOpen(null); }
+  return <div className="wv-experience">
+    <section ref={screenRef} className="screen is-active guide-screen"><div className="wrap">
+      <div className="topbar"><button className="icon-btn press" onClick={onClose} aria-label={fr ? 'Retour' : 'Back'}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg></button><span className="pill">{fr ? 'Version de test' : 'Test version'}</span></div>
+      <h1 className="title" data-reveal style={{ '--i': 0 }}>{fr ? 'Trouvez votre mouvement.' : 'Find your movement.'}</h1>
+      <p className="sub" data-reveal style={{ '--i': 1 }}>{fr ? 'Touchez une zone du corps ou cherchez un nom.' : 'Tap a body area or search for a name.'}</p>
+      <div className="search" data-reveal style={{ '--i': 2 }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg><label className="sr" htmlFor="guide-search">{fr ? 'Rechercher un exercice' : 'Search exercises'}</label><input id="guide-search" type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder={fr ? 'Nom, muscle, matériel…' : 'Name, muscle, equipment…'} /></div>
+      <div className="map" data-reveal style={{ '--i': 3 }}>
+        <div className="map-fig"><div className="map-inner"><BodyMap />{ZONES[view].map(z => <button key={z} className="spot" style={{ left: `${5 + entry.spots[view][z][0] * 0.9}%`, top: `${5 + entry.spots[view][z][1] * 0.9}%` }} aria-label={ZONE_NAMES[lang][z]} aria-pressed={zone === z} onClick={() => pickZone(z)}><i /></button>)}</div></div>
+        <div className="map-side"><div className="seg"><button aria-pressed={view === 'front'} onClick={() => setView('front')}>{fr ? 'Face' : 'Front'}</button><button aria-pressed={view === 'back'} onClick={() => setView('back')}>{fr ? 'Dos' : 'Back view'}</button></div>
+          {ZONES[view].map(z => <button key={z} className="chip press" aria-pressed={zone === z} onClick={() => pickZone(z)}><span>{ZONE_NAMES[lang][z]}</span><span className="ct">{CATALOGUE.filter(e => inZone(e, z)).length}</span></button>)}
+        </div>
+      </div>
+      <div className="guide-tools" data-reveal style={{ '--i': 4 }}><button className="btn-ghost is-s press" onClick={() => { setZone(null); setQuery(''); setOpen(null); }}>{fr ? 'Tous les exercices' : 'All exercises'}</button><button className="btn-ghost is-s press" lang={fr ? 'en' : 'fr'} onClick={() => setLang(fr ? 'en' : 'fr')}>{fr ? 'English' : 'Français'}</button></div>
+      <p className="list-head" role="status" data-reveal style={{ '--i': 5 }}>{list.length} / {CATALOGUE.length} {fr ? 'exercices' : 'exercises'}</p>
+      <ul className="list">{list.map(e => <li key={e.key} className="item" data-exercise={e.key}>
+        <button className="item-btn press" aria-expanded={open === e.key} onClick={() => setOpen(open === e.key ? null : e.key)}>
+          <Thumb exercise={e} />
+          <span><span className="item-name">{fr ? e.fr : e.name}</span><span className="item-sub">{fr ? e.name : e.fr} · {fr ? EQUIPMENT[e.equipment] : e.equipment}</span></span>
+          {/* An exercise the core does not offer is not counted: the app reads it with the universal engine and at most
+              proposes a number to check (universalProposal.js; counting research of 14 October 2026). Awaiting David's
+              approval of the words (R10). */}
+          <span className={`tag${isOffered(e.key) ? ' on' : ''}`}>{isOffered(e.key) ? tierTag(tierOf(e.key) || 'experimental', fr) : (fr ? 'Non compté' : 'Not counted')}</span>
+        </button>
+        {open === e.key && <div className="guide-detail"><GuideFrames exercise={e} fr={fr} /><p>{isOffered(e.key) ? `${fr ? 'Compté' : 'Counted'} · ${tierLabel(tierOf(e.key) || 'experimental', fr)}.` : (fr ? 'Pas encore compté par l’appli\u00A0: elle propose au mieux un nombre, à vérifier.' : 'Not counted by the app yet: at best it suggests a number for you to check.')}{hasGuideFigure(e.key) ? (fr ? ' Illustration à titre indicatif.' : ' Illustration for guidance only.') : e.similar ? (fr ? ' Dessin d’un mouvement proche.' : ' Drawing of a similar movement.') : ''}</p>
+          <FilmingPlacement exerciseKey={e.key} fr={fr} />
+          <button className="btn-line press" onClick={() => onChoose(e.key)}>{fr ? 'Filmer cet exercice' : 'Film this exercise'}</button>
+          <button className="btn-ghost is-s press" onClick={() => setOpen(null)}>{fr ? 'Fermer' : 'Close'}</button>
+        </div>}
+      </li>)}</ul>
+      {!list.length && <p className="empty">{fr ? 'Aucun exercice trouvé.' : 'No exercises found.'}</p>}
+      <p className="guide-credit">{fr ? 'Illustrations\u00A0:' : 'Illustrations:'} Everkinetic, via <a href="https://github.com/bryllim/workout-guide" target="_blank" rel="noreferrer">bryllim/workout-guide</a>, <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a>. {fr ? 'Redimensionnées et converties en WebP.' : 'Resized and converted to WebP.'}</p>
+    </div></section>
+  </div>;
+}

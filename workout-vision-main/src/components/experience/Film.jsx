@@ -1,0 +1,326 @@
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useT } from '../../lib/LanguageContext';
+import { createLiftScene, hasFigure, restBox } from './lift-scenes';
+import { baseKey } from '../../lib/variant-key';
+import { liftDefinition } from '../../lib/counting/core';
+import { tierLabel } from '../../lib/liftTiers';
+import { tierOf } from '../../lib/offer';
+import { exerciseName, guideExercise } from './exercise-info';
+import { filmingGuideFor } from './filming-guide';
+import { GuideFrames } from './Guide';
+import { GUIDE_BOX, hasGuideFigure } from './guide-figure';
+import { GuideFigure } from './GuideFigure';
+import { FITNESS_TESTS } from '../../lib/fitness-tests';
+import { canOpenCamera, readFilmMode, writeFilmMode } from '../../lib/liveCamera';
+import { liveBuild } from '../../lib/buildFlags';
+import { getExercise } from '../../lib/exercises/index';
+import FilmExerciseDrawer from './FilmExerciseDrawer';
+import './Film.css';
+
+function getDisplayName(key, lang) {
+  const name = exerciseName(key, lang);
+  if (name && name !== key) return name;
+  const cat = getExercise(key);
+  if (cat) return lang === 'fr' ? cat.name_fr : cat.name;
+  return key.replace(/_/g, ' ');
+}
+
+export default function Film({ lift, onBack, onFile, onLive, onChangeLift, hero: arrivedByTransition = false }) {
+  const { lang } = useT(), fr = lang === 'fr';
+  const [currentLift, setCurrentLift] = useState(lift);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  useEffect(() => { setCurrentLift(lift); }, [lift]);
+  const activeLift = currentLift || lift;
+  const catalogItem = getExercise(activeLift);
+  const countingLiftKey = catalogItem?.counting_key || activeLift;
+
+  // Live counting is offered where the browser can open the camera for the page (liveCamera.js), and only by a
+  // build made with VITE_LIVE=1: production hides it until Phase 6 (buildFlags.js, WP0.3).
+  const liveOffered = liveBuild() && !!onLive && canOpenCamera();
+  const [mode, setModeState] = useState(() => (liveOffered ? readFilmMode() : 'video'));
+  const setMode = m => {
+    sampleAbort.current?.abort();
+    setSampleError(false);
+    setModeState(m);
+    writeFilmMode(m);
+  };
+  const live = liveOffered && mode === 'live';
+  const canvas = useRef(null);
+  const fileRef = useRef(null);
+  // The frame takes the chosen card's name only for the View Transition that brings it in, then drops it,
+  // so a Film screen still fading out never shares the name with the next one.
+  const [hero, setHero] = useState(arrivedByTransition);
+  useEffect(() => { if (!hero) return undefined; const t = setTimeout(() => setHero(false), 700); return () => clearTimeout(t); }, [hero]);
+  // One source for the angle: the note, the eyebrow and step 1 all read it (review of card 042).
+  const placement = filmingGuideFor(activeLift, fr, countingLiftKey);
+  const view = placement.view;
+  const test = Object.hasOwn(FITNESS_TESTS, activeLift) ? FITNESS_TESTS[activeLift] : null;
+  // The nine card lifts show the framing of their reference set; every other exercise, the guide's drawings.
+  // An exercise of the guide with an animated figure of the app (GuideFigure.jsx) shows it in place of the drawings.
+  // A variant of a card lift ("bench_press--wide_grip", variant-key.js) is drawn by its base's card scene.
+  const sceneLift = hasFigure(activeLift) ? activeLift : hasFigure(baseKey(activeLift)) ? baseKey(activeLift) : activeLift;
+  const figure = hasFigure(sceneLift), guide = figure ? null : (guideExercise(activeLift) || guideExercise(countingLiftKey)), animated = !figure && hasGuideFigure(guide?.key);
+  const tier = tierOf(activeLift);
+  const [bw, bh] = figure ? restBox(sceneLift) : animated ? GUIDE_BOX : [1, 1];
+
+  // The frame takes the height left once everything else on the screen down to "Filmer ma série" is
+  // laid out: a long name wraps to three lines, the guide's credit to three more (review 05 of step 2,
+  // 29 September). That rest does not depend on the frame, so measuring it again settles at once.
+  const screen = useRef(null), frame = useRef(null), action = useRef(null);
+  useLayoutEffect(() => {
+    const root = screen.current, f = frame.current, a = action.current;
+    if (!root || !f || !a) return undefined;
+    const top = el => { let y = 0; for (let n = el; n; n = n.offsetParent) y += n.offsetTop; return y; };
+    // A change of a pixel or less is left alone: the guide figure's frame (770 / 1000) has a fractional height, and the
+    // whole-pixel offsets then make the rest swing by 1 px, which resizes the frame and fires this observer again, a loop
+    // WebKit reports as "ResizeObserver loop completed with undelivered notifications" (the tour of 18 October 2026, 390x745).
+    let rest = NaN;
+    const set = () => {
+      const r = top(a) + a.offsetHeight - f.offsetHeight;
+      if (Math.abs(r - rest) <= 1) return;
+      rest = r;
+      root.style.setProperty('--rest-h', `${r}px`);
+    };
+    set();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(set);
+    // The section is at least a screen high and may not change when the text above the frame does,
+    // so its content is watched as well (review 06).
+    ro.observe(root);
+    if (root.firstElementChild) ro.observe(root.firstElementChild);
+    return () => ro.disconnect();
+  }, [activeLift, lang, live]);
+
+  useEffect(() => {
+    if (!canvas.current || !figure) return;
+    return createLiftScene(canvas.current, sceneLift, 'rest');
+  }, [activeLift, figure]);
+
+  function handleFile(e) {
+    const f = e.target.files?.[0];
+    if (f) {
+      sampleAbort.current?.abort();
+      setSampleError(false);
+      onFile(f);
+    }
+  }
+
+  function handleSelectExercise(newLift) {
+    sampleAbort.current?.abort();
+    setSampleError(false);
+    setCurrentLift(newLift);
+    onChangeLift?.(newLift);
+    setDrawerOpen(false);
+  }
+
+  const [sampleLoading, setSampleLoading] = useState(false);
+  const [sampleError, setSampleError] = useState(false);
+  const sampleAbort = useRef(null);
+  const [deviceTilt, setDeviceTilt] = useState(null);
+
+  useEffect(() => {
+    setSampleLoading(false);
+    setSampleError(false);
+    return () => { sampleAbort.current?.abort(); };
+  }, [activeLift]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('DeviceOrientationEvent' in window)) return undefined;
+    function handleOrientation(e) {
+      if (e.beta !== null && e.beta !== undefined) {
+        // Upright vertical phone has |beta| ~ 90 deg. Deviation from true vertical is |90 - |beta||.
+        const deviation = Math.round(Math.abs(90 - Math.abs(e.beta)));
+        setDeviceTilt(deviation);
+      }
+    }
+    window.addEventListener('deviceorientation', handleOrientation, { passive: true });
+    return () => window.removeEventListener('deviceorientation', handleOrientation);
+  }, []);
+
+  useEffect(() => {
+    // Quietly warm the primary pitch demo video into SW cache for zero-latency, offline basement gym pitches
+    const demoUrl = `${import.meta.env.BASE_URL}demo/bodyweight-squat-9.mp4`;
+    fetch(demoUrl).catch(() => {});
+  }, []);
+
+  async function handleSampleVideo() {
+    if (sampleLoading) return;
+    sampleAbort.current?.abort();
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    sampleAbort.current = ctrl;
+    let handed = false;
+    setSampleLoading(true);
+    setSampleError(false);
+    try {
+      let demoFile = 'bodyweight-squat-9.mp4';
+      const l = (activeLift || '').toLowerCase();
+      if (l.includes('ez')) demoFile = 'ez-curl-10.mp4';
+      else if (l.includes('curl')) demoFile = 'bicep-curl-5.mp4';
+      else if (l.includes('pulldown') || l.includes('pull')) demoFile = 'lat-pulldown-6.mp4';
+      else if (l.includes('dip')) demoFile = 'dip-13.mp4';
+
+      const res = await fetch(`${import.meta.env.BASE_URL}demo/${demoFile}`, ctrl ? { signal: ctrl.signal } : undefined);
+      if (!res.ok) throw new Error(`Demo fetch failed: ${res.status}`);
+      const blob = await res.blob();
+      if (ctrl?.signal.aborted || sampleAbort.current !== ctrl) return;
+      const file = new File([blob], demoFile, { type: 'video/mp4' });
+      handed = true;
+      onFile(file, { sample: true });
+    } catch (err) {
+      if (err?.name !== 'AbortError' && !ctrl?.signal.aborted && sampleAbort.current === ctrl) {
+        setSampleError(true);
+      }
+    } finally {
+      if (sampleAbort.current === ctrl) {
+        sampleAbort.current = null;
+        if (!handed) setSampleLoading(false);
+      }
+    }
+  }
+
+  // Knee and hip lifts are filmed with the whole body in frame; arm lifts with at least head to hips, which is
+  // what their count needs (the figure shows the reference set's own, wider framing).
+  const wholeBody = ['knee', 'hip'].includes(liftDefinition(countingLiftKey)?.joint);
+  // A knee or hip exercise filmed from the front (a lateral lunge, a standing hip abduction) is filmed facing
+  // the phone, as its view says; the whole body stays in frame either way (review of 29 September).
+  const step1 = wholeBody && view === 'side'
+    ? (fr ? 'Posez le téléphone à la verticale, sur le côté, pour qu\u2019il vous voie de profil.' : 'Stand the phone upright at your side, so it sees you in profile.')
+    : view === 'side'
+    ? (fr ? 'Posez le téléphone sur le côté, le bras qui travaille face à l\u2019objectif.' : 'Stand the phone at your side, working arm facing the lens.')
+    : (fr ? 'Posez le téléphone face à vous, à la verticale.' : 'Stand the phone upright, facing you.');
+
+  return <div className="wv-experience">
+    <section ref={screen} className="screen is-active film-screen"><div className="wrap">
+      <div className="topbar">
+        <button className="icon-btn press" onClick={() => { sampleAbort.current?.abort(); onBack(); }} aria-label={fr ? 'Retour' : 'Back'}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
+        </button>
+        <div className="film-topbar-end">
+          {!test && (
+            <button
+              type="button"
+              className="film-switch-btn press"
+              onClick={() => setDrawerOpen(true)}
+              aria-label={fr ? 'Changer d’exercice' : 'Change exercise'}
+              data-testid="film-switch-exercise"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+              <span>{fr ? 'Changer' : 'Change'}</span>
+            </button>
+          )}
+          <span className="pill">{fr ? 'Version de test' : 'Test version'}</span>
+        </div>
+      </div>
+      <p className="eyebrow" data-reveal style={{ '--i': 0 }}>{test ? (fr ? 'Test de condition physique' : 'Fitness test') : fr ? (view === 'side' ? 'Filmé de profil' : 'Filmé de face') : (view === 'side' ? 'Filmed from the side' : 'Filmed from the front')}</p>
+      <h2 className="title" data-reveal style={{ '--i': 1 }}>{getDisplayName(activeLift, lang)}</h2>
+      {tier && <p className={`tier tier-${tier}`} data-reveal style={{ '--i': 1 }}>{tierLabel(tier, fr)}</p>}
+      <div ref={frame} className={animated ? 'frame is-guide-figure' : 'frame'} data-reveal style={{ '--i': 2, aspectRatio: `${bw} / ${bh}`, '--ar': bw / bh, viewTransitionName: hero ? 'lift-hero' : undefined }}>
+        {figure ? <canvas ref={canvas} aria-hidden="true" /> : animated ? <GuideFigure exercise={guide.key} /> : guide?.frames.length > 0 && <GuideFrames exercise={guide} fr={fr} />}
+        <svg className="corners" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0 9V0h9M91 0h9v9M100 91v9h-9M9 100H0v-9" fill="none" stroke="currentColor" strokeWidth="1.4" vectorEffect="non-scaling-stroke" />
+        </svg>
+        <i className="scan" aria-hidden="true" />
+      </div>
+      {figure
+        ? <p className="caption" data-reveal style={{ '--i': 3 }}>{fr ? 'Le cadrage de la série de référence' : 'The framing of the reference set'}</p>
+        : animated
+        // The app's figure: a drawing of the movement from its spec, never a measure; an exercise with no fitting drawing
+        // of the guide (noDrawing) keeps its movement in words before it.
+        ? <p className="caption" data-reveal style={{ '--i': 3 }}>{guide.noDrawing ? `${fr ? guide.how.fr : guide.how.en} ` : ''}{fr ? 'Illustration du mouvement, à titre indicatif.' : 'Illustration of the movement, for guidance only.'}</p>
+        : <p className="caption" data-reveal style={{ '--i': 3 }}>{guide?.noDrawing
+          // No drawing of the guide shows this posture (exerciseGuide.js, noDrawing): the frame stays an empty viewfinder,
+          // the movement is said in words here, and no credit is given for drawings it does not show.
+          ? (fr ? guide.how.fr : guide.how.en)
+          : test || guide?.similar
+          ? (fr ? 'Mouvement proche, d’après le guide. Dessins\u00A0: Everkinetic, via bryllim/workout-guide, CC BY-SA 4.0.' : 'A similar movement, from the guide. Drawings: Everkinetic, via bryllim/workout-guide, CC BY-SA 4.0.')
+          : fr ? 'Le mouvement, d’après le guide. Dessins\u00A0: Everkinetic, via bryllim/workout-guide, CC BY-SA 4.0.' : 'The movement, from the guide. Drawings: Everkinetic, via bryllim/workout-guide, CC BY-SA 4.0.'}</p>}
+      {deviceTilt !== null && (
+        <div className={`film-tilt-pill ${deviceTilt <= 18 ? 'is-ideal' : 'is-warning'}`} data-testid="film-tilt-pill">
+          <span className="film-tilt-dot" aria-hidden="true" />
+          <span>
+            {deviceTilt <= 18
+              ? (fr ? `Angle caméra\u00A0: ${deviceTilt}° · Aligné` : `Camera tilt: ${deviceTilt}° · Aligned`)
+              : (fr ? `Angle caméra\u00A0: ${deviceTilt}° · Redressez le téléphone` : `Camera tilt: ${deviceTilt}° · Tilt phone upright`)}
+          </span>
+        </div>
+      )}
+      {/* A fitness test is filmed as its protocol says (fitness-tests.js): its own three steps. */}
+      {test ? <ol className="steps" data-reveal style={{ '--i': 4 }}>
+        {test.steps[fr ? 'fr' : 'en'].map((t, i) => <li key={i}><span className="n">{i + 1}</span><span>{t}</span></li>)}
+      </ol> : <ol className="steps" data-reveal style={{ '--i': 4 }}>
+        <li><span className="n">1</span><span>{step1}</span></li>
+        <li><span className="n">2</span><span>{wholeBody ? (fr ? 'Le corps entier dans le cadre, pieds compris.' : 'Your whole body in the frame, feet included.') : (fr ? 'Au moins de la tête aux hanches dans le cadre, mains comprises.' : 'At least head to hips in the frame, hands included.')}</span></li>
+        {/* From rest to rest, so no rep is cut at either end of the video (accuracy work, 30 September), and two seconds
+            past the end: a video that stops inside the last rep loses it (failure mode 4, anatomy-8oct.md; on 9 October
+            a confirm prompt for it was measured and not shipped, cut-end.test.ts). Two seconds: convention, UNSOURCED.
+            French approved by David on 9 October (R10). */}
+        <li><span className="n">3</span><span>{fr ? 'Toute la série, du départ au retour au repos, puis deux secondes de plus.' : 'The whole set, from rest back to rest, then two more seconds.'}</span></li>
+      </ol>}
+      {live ? <div className="actions" data-reveal style={{ '--i': 5 }}>
+        {/* Live: the camera opens on the next screen, inside the app; the count shows as the set goes (Live.jsx). */}
+        <button ref={action} className="btn-primary tactile" onClick={onLive} data-testid="film-live">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3.5" fill="currentColor" /></svg>
+          <span>{fr ? 'Compter en direct' : 'Count live'}</span>
+        </button>
+      </div> : <div className="actions" data-reveal style={{ '--i': 5 }}>
+        {/* Each action is its file input, laid over the label so a tap lands on it (the surest way to open the
+            camera in Safari), named by the label's words, and reached and opened by the keyboard as any file input
+            is: the label is not a second control around it (audit FINDING-024, axe nested-interactive). */}
+        <label ref={action} className="btn-primary tactile">
+          <input ref={fileRef} type="file" accept="video/*,.mov" capture="environment" className="hx" onChange={handleFile} />
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3.5" fill="currentColor" /></svg>
+          <span>{test ? (fr ? 'Filmer le test' : 'Record the test') : (fr ? 'Filmer ma série' : 'Record my set')}</span>
+        </label>
+        <label className="btn-ghost press">
+          <input type="file" accept="video/*,.mov" className="hx" onChange={handleFile} />
+          <span>{fr ? 'Choisir une vidéo' : 'Choose a video'}</span>
+        </label>
+        <button
+          type="button"
+          className="film-sample-btn press"
+          onClick={handleSampleVideo}
+          disabled={sampleLoading}
+          data-testid="film-sample-btn"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <polygon points="5 3 19 12 5 21 5 3" />
+          </svg>
+          <span>{sampleLoading
+            ? (fr ? 'Chargement de l’exemple…' : 'Loading sample set…')
+            : (fr ? 'Tester un exemple préenregistré' : 'Try with a sample set')}</span>
+        </button>
+        {sampleError && <p role="alert" className="film-placement-note" data-testid="film-sample-error">{fr ? 'Impossible de charger la vidéo d’exemple.' : 'Could not load the sample video.'}</p>}
+      </div>}
+      {/* How to count, under the action, so the frame and the action keep their place on a short screen (fitness-tests.spec.js). */}
+      {liveOffered && <div className="film-mode" role="group" aria-label={fr ? 'Comment compter' : 'How to count'} data-reveal style={{ '--i': 5 }}>
+        <button type="button" aria-pressed={!live} className={`film-mode-opt press${!live ? ' is-on' : ''}`} onClick={() => setMode('video')} data-testid="mode-video">{fr ? 'Vidéo' : 'Video'}</button>
+        <button type="button" aria-pressed={live} className={`film-mode-opt press${live ? ' is-on' : ''}`} onClick={() => setMode('live')} data-testid="mode-live">
+          <i className="live-dot" aria-hidden="true" />{fr ? 'En direct' : 'Live'}
+        </button>
+      </div>}
+      <p className="privacy" data-reveal style={{ '--i': 6 }}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+        {/* Live: the camera's picture is the one thing this line speaks of, and it is never recorded nor sent. "Nothing is
+            recorded or sent" was untrue: a set's joint positions are saved, shared or contributed by a tap, and the usage
+            counts may be sent (src/lib/events.js). True whether or not the counts are on, so not conditional on them as
+            Watch.jsx is. Approved by David on 9 October 2026 (test/real-phone/swarm/copy-live.md). */}
+        <span>{live
+          ? (fr ? 'L’image de la caméra reste sur votre téléphone\u00A0: elle n’est ni enregistrée ni envoyée.' : 'The camera’s picture stays on your phone: it is neither recorded nor sent.')
+          : (fr ? 'La vidéo reste sur votre téléphone.' : 'The video stays on your phone.')}</span>
+      </p>
+      {!test && <p className="film-placement-note" data-testid="film-filming-note" data-reveal style={{ '--i': 7 }}>
+        {placement.angleLabel} · {placement.framingLabel}.
+      </p>}
+      {drawerOpen && (
+        <FilmExerciseDrawer
+          currentLift={activeLift}
+          onSelect={handleSelectExercise}
+          onClose={() => setDrawerOpen(false)}
+        />
+      )}
+    </div></section>
+  </div>;
+}

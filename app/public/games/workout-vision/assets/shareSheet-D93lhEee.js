@@ -1,0 +1,1 @@
+function s({windowMs:n=1e3,now:a=()=>Date.now()}={}){let t=-1/0,r=!1;return{begin(){const e=a();return e-t<n?!1:(t=e,!0)},shares(e){return e&&!r?!0:(r=!1,!1)},failed(e){return e?.name==="AbortError"?!1:(r=!0,!0)}}}export{s};

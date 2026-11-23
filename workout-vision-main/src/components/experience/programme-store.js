@@ -1,0 +1,158 @@
+// Where programmes are kept: on this phone only, in localStorage. The coach's drafts under wv_pro_drafts; the
+// programmes a client received under wv_programmes. Every read and write is guarded: a private window, a full or
+// refused storage leaves the screens working, with nothing kept (the screens say so where it matters).
+import { DEFAULT_HOLD, DEFAULT_ITEM, LIMITS, cleanText, fromCompact, compact, programmeId } from './programme';
+import { showUnmeasuredRoutes } from '../../lib/buildFlags';
+
+const DRAFTS = 'wv_pro_drafts', RECEIVED = 'wv_programmes';
+// At most this many of each are kept. Received programmes: the oldest go first (a list on one phone, not an archive).
+// Drafts: a new one past the cap is refused, never a coach's programme dropped unseen (excellence hunt, 9 October
+// 2026; a draft is about 1 kB). Both UNSOURCED, convention.
+export const MAX_DRAFTS = 300;
+const MAX_RECEIVED = 20;
+
+function read(key) {
+  try { const v = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
+}
+function write(key, list) {
+  try { localStorage.setItem(key, JSON.stringify(list)); return true; } catch { return false; }
+}
+
+const newId = () => `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+/** A new, empty draft. */
+export const newDraft = (now = Date.now()) => ({ id: newId(), updatedAt: now, title: '', who: '', note: '', items: [] });
+// The exercises a new item starts as a hold: PLAN.md, category A, "Isometric holds to be timed (12)", the list of the
+// guide's holds that need a timer, not a rep counter (status: convention). The coach can set any of them in reps.
+export const HOLD_START = new Set(['plank', 'side_plank', 'wall_sit', 'farmer_carry', 'cable_pallof_hold', 'superman_hold',
+  'dead_hang', 'active_hang', 'hollow_body_hold', 'bear_plank', 'l_sit_hold', 'copenhagen_plank']);
+/** A new item of a draft, at the default target: a hold of DEFAULT_HOLD for the holds of HOLD_START. */
+export const newItem = key => ({ key, ...DEFAULT_ITEM, ...(HOLD_START.has(key) ? { holdSec: DEFAULT_HOLD } : {}) });
+
+/** Creates a pre-populated draft from a biomechanically balanced template (extended routes only). */
+export const createFromTemplate = (templateId, now = Date.now()) => {
+  if (!showUnmeasuredRoutes()) return null;
+  if (templateId === 'posture') {
+    return {
+      ...newDraft(now),
+      title: 'Posturologie & Mobilité',
+      note: 'Contrôle lent, tempo 3-1-1, respiration fluide.',
+      items: [
+        { ...newItem('doorway_row'), sets: 3, reps: 12, rest: 60, note: 'Rapprochement des omoplates, dos droit' },
+        { ...newItem('glute_bridge'), sets: 3, reps: 15, rest: 60, note: 'Alignement genoux-bassin' },
+        { ...newItem('romanian_deadlift'), sets: 3, reps: 10, rest: 90, note: 'Dos neutre, flexion hanches' },
+      ],
+    };
+  }
+  if (templateId === 'shoulder') {
+    return {
+      ...newDraft(now),
+      title: 'Épaule & Fixateurs d’omoplate',
+      note: 'Épaules basses, sans hausser les trapèzes, tempo contrôlé.',
+      items: [
+        { ...newItem('banded_face_pull'), sets: 3, reps: 12, rest: 60, note: 'Tirage haut, rotation externe' },
+        { ...newItem('wall_push_up'), sets: 3, reps: 10, rest: 60, note: 'Pousser le mur au sommet, contrôle scapulaire' },
+        { ...newItem('lateral_raise'), sets: 3, reps: 10, rest: 60, note: 'Plan scapulaire, monter à hauteur d’épaule' },
+      ],
+    };
+  }
+  if (templateId === 'conditioning') {
+    return {
+      ...newDraft(now),
+      title: 'Renforcement & Équilibre',
+      note: 'Échauffement articulaire 5 min au préalable.',
+      items: [
+        { ...newItem('squat'), sets: 3, reps: 10, rest: 90, note: 'Descendre à la parallèle' },
+        { ...newItem('push_up'), sets: 3, reps: 10, rest: 60, note: 'Corps gainé' },
+        { ...newItem('bicep_curl'), sets: 3, reps: 12, rest: 60, note: 'Sans élan du buste' },
+      ],
+    };
+  }
+  return newDraft(now);
+};
+/** A draft with nothing in it yet: not kept until something is (Pro.jsx). */
+export const isEmptyDraft = d => !String(d.title ?? '').trim() && !String(d.who ?? '').trim() && !String(d.note ?? '').trim() && !d.items?.length;
+
+/** The coach's drafts, the latest changed first; a stored entry that is not a draft is left out. */
+export function loadDrafts() {
+  return read(DRAFTS).filter(d => d && typeof d.id === 'string' && Array.isArray(d.items))
+    .map(d => ({ ...d, title: String(d.title ?? '').slice(0, LIMITS.title), who: String(d.who ?? '').slice(0, LIMITS.who), note: String(d.note ?? '').slice(0, LIMITS.note) }))
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+}
+/**
+ * Keeps one draft (added or replaced): true once kept, false when the phone refuses, 'full' for a new draft past
+ * MAX_DRAFTS (nothing is dropped to make room).
+ */
+export function saveDraft(draft) {
+  // An empty draft kept before 9 October 2026 takes no place: it goes at the next save.
+  const stored = read(DRAFTS).filter(d => d && !isEmptyDraft(d)), list = stored.filter(d => d.id !== draft.id);
+  if (list.length === stored.length && list.length >= MAX_DRAFTS) return 'full';
+  list.unshift(draft);
+  return write(DRAFTS, list);
+}
+
+/**
+ * The draft to adjust after a client's results (Results.jsx): the coach's own draft of that title and for that person
+ * when this phone holds one, else a new one made from the results (each exercise at the sets and reps sent, the rest
+ * at its default, no cue), kept at once. Returns { draft, kept, rebuilt }: rebuilt when made from the results, which
+ * the editor says (on an iPhone the installed app and Safari keep separate drafts, and a results link opens in Safari).
+ */
+export function draftFromResults(results, now = Date.now()) {
+  // The draft's words as its link carries them (cleanText): a double space or a no-break space typed in the draft
+  // is one space in the results.
+  const same = loadDrafts().find(d => cleanText(d.title).slice(0, LIMITS.title) === results.title
+    && cleanText(d.who).slice(0, LIMITS.who) === (results.who || ''));
+  if (same) return { draft: same, kept: true, rebuilt: false };
+  // A hold comes back as sent (results' g), and an exercise sent in reps stays in reps, a hold of HOLD_START included.
+  const item = i => {
+    const { holdSec: _start, ...fresh } = newItem(i.key);
+    return { ...fresh, sets: i.sets, reps: i.reps, ...(i.holdSec > 0 ? { holdSec: i.holdSec } : {}) };
+  };
+  const draft = { ...newDraft(now), title: results.title, who: results.who || '', items: results.items.map(item) };
+  return { draft, kept: saveDraft(draft), rebuilt: true };
+}
+export function removeDraft(id) { return write(DRAFTS, read(DRAFTS).filter(d => d?.id !== id)); }
+
+// The earlier versions a programme remembers: their sets of the day count for it (programme.js, progressOf).
+const MAX_PREVIOUS = 10;
+
+/**
+ * The programmes received, the latest opened first, each { id, programme, receivedAt, openedAt, previous }; each one
+ * stored is checked again as it is read, as a link is. previous: the ids of the earlier versions it replaced.
+ */
+export function loadReceived() {
+  return read(RECEIVED).map(r => {
+    const back = r && typeof r === 'object' ? fromCompact(r.data) : { ok: false };
+    if (!back.ok) return null;
+    const previous = Array.isArray(r.previous) ? r.previous.filter(x => typeof x === 'string').slice(0, MAX_PREVIOUS) : [];
+    return { id: programmeId(back.programme), programme: back.programme, receivedAt: r.receivedAt || 0, openedAt: r.openedAt || 0, previous };
+  }).filter(Boolean).sort((a, b) => b.openedAt - a.openedAt);
+}
+
+/**
+ * Keeps a programme received (opened from a link); the same programme twice is kept once. One of the same title for
+ * the same person received before it is an earlier version, which the coach changed and sent again (excellence hunt,
+ * 9 October 2026): its id is remembered, so the sets filmed from it that day still count for this one. The earlier
+ * version stays listed, with the day it came: opening its link again never takes the newer one away, and a set of an
+ * exercise the new version dropped can still be sent from it. Returns { id, kept }: the programme's id, and whether
+ * the phone kept it (false when it refuses storage, as Safari does with every cookie blocked: Programme.jsx then leaves
+ * the link in the address, and the app holds the programme for the visit, App.jsx).
+ */
+export function keepReceived(programme, now = Date.now()) {
+  const id = programmeId(programme), stored = read(RECEIVED).filter(r => r && typeof r === 'object');
+  const was = stored.find(r => r.id === id), receivedAt = was?.receivedAt || now;
+  const earlier = stored.filter(r => r.id !== id && (r.receivedAt || 0) < receivedAt
+    && r.data?.t === programme.title && (r.data?.w || '') === (programme.who || ''));
+  const ids = earlier.flatMap(r => [r.id, ...(Array.isArray(r.previous) ? r.previous : [])]);
+  const previous = [...new Set(ids.filter(x => typeof x === 'string' && x !== id))].slice(0, MAX_PREVIOUS);
+  const list = stored.filter(r => r.id !== id);
+  list.unshift({ id, data: compact(programme), receivedAt, openedAt: now, ...(previous.length ? { previous } : {}) });
+  return { id, kept: write(RECEIVED, list.slice(0, MAX_RECEIVED)) };
+}
+/** Marks a received programme as the one opened last. */
+export function openReceived(id, now = Date.now()) {
+  const list = read(RECEIVED);
+  const r = list.find(x => x?.id === id);
+  if (r) { r.openedAt = now; write(RECEIVED, list); }
+}
+export function removeReceived(id) { return write(RECEIVED, read(RECEIVED).filter(r => r?.id !== id)); }

@@ -1,0 +1,937 @@
+/**
+ * The coach's programme (Espace pro, 6 October 2026): the link's round trip, packed and plain; every bad link refused
+ * without throwing; the length cap; planned against counted; the programme's PDF; the report's target line; and no
+ * word of care in the new copy (wellness only).
+ */
+import { describe, it, expect, vi } from 'vitest';
+// exercise-info.js (the names) reaches the drawing code, which reads the screen when it loads (as in exercise-name.test.js).
+// jsPDF, seeing a window, takes its atob and btoa from it.
+vi.hoisted(() => {
+  const any = new Proxy(function stub() {}, { get: (_, k) => (k === Symbol.toPrimitive ? () => 0 : any), apply: () => any, set: () => true });
+  globalThis.window ??= { devicePixelRatio: 1, atob: globalThis.atob, btoa: globalThis.btoa };
+  globalThis.document ??= { createElement: () => any };
+});
+import {
+  LIMITS, MAX_PAYLOAD, MAX_JSON, encodeProgramme, plainPayload, decodeProgramme, programmeOf, fromCompact, compact, payloadOf,
+  programmeLink, programmeId, plannedOf, progressOf, toBase64url, targetText, cleanText,
+  resultsOf, encodeResults, decodeResults, plainResultsPayload, resultsLink, resultsPayloadOf, RESULT_LIMITS,
+  keptLetter, lastDayOf, dayWords, timeWords, RESULTS_DAYS_BACK,
+  SIDES, DEFAULT_HOLD, holdOf, sideOf, frequencyOf, filmable, guideOnly, knownExercise, programmable, fixItem, fixHold, fixTimes,
+  withKind, withSide, resultsSummary, fromBase64url, SHEET_VERSION,
+} from '../programme';
+import { programmePdf, programmeSheet, programmeFileName, programmeQr, packNow, QR_MAX_VERSION, QR_SIDE, QR_BLOCK_MAX, QR_MODULE_MIN } from '../programme-pdf';
+import { frameSource } from '../sheet-drawings';
+import { draftFromResults, isEmptyDraft, loadDrafts, saveDraft, newDraft, newItem, HOLD_START, MAX_DRAFTS, keepReceived, loadReceived } from '../programme-store';
+import catalogue from '../../../lib/guide-catalog.json';
+import { DRAWING_8PX } from './fixtures/drawing-8px';
+import { reportSheet } from '../report-sheet';
+import { reportPdf } from '../report-pdf';
+import { savedSet } from '../saved-set';
+import { PRO, allStrings } from '../pro-copy';
+import { jsPDF } from 'jspdf';
+import { validateWorkout } from '../../../lib/validateSchema';
+
+const NBSP = ' ';
+const sample = {
+  title: 'Haut du corps, semaine 1', who: 'Camille', note: 'Échauffement 10 min.\nBoire entre les séries.',
+  items: [
+    { key: 'squat', sets: 3, reps: 10, rest: 90, note: 'Descendre lentement' },
+    { key: 'push_up', sets: 4, reps: 12, rest: 60, note: '' },
+  ],
+};
+const b64 = text => toBase64url(new TextEncoder().encode(text));
+const gz = async text => {
+  const s = new Blob([new TextEncoder().encode(text)]).stream().pipeThrough(new CompressionStream('gzip'));
+  return 'z' + toBase64url(new Uint8Array(await new Response(s).arrayBuffer()));
+};
+
+describe('the programme link', () => {
+  it('reads back what it wrote, packed and plain', async () => {
+    for (const gzip of [true, false]) {
+      const payload = await encodeProgramme(sample, { gzip });
+      expect(payload).toMatch(/^[zj][A-Za-z0-9_-]+$/);
+      if (!gzip) expect(payload[0]).toBe('j');
+      const back = await decodeProgramme(payload);
+      expect(back).toEqual({ ok: true, programme: sample });
+    }
+  });
+
+  it('packs when packing is shorter, and keeps a full programme within the cap', async () => {
+    const full = {
+      title: 'T'.repeat(LIMITS.title), who: 'W'.repeat(LIMITS.who), note: 'Une note assez longue. '.repeat(26).slice(0, LIMITS.note).trim(),
+      items: Array.from({ length: LIMITS.items }, (_, i) => ({ key: i % 2 ? 'squat' : 'deadlift', sets: 10, reps: 100, rest: 600, note: `Consigne ${i} `.repeat(14).slice(0, LIMITS.itemNote).trim() })),
+    };
+    const packed = await encodeProgramme(full), plain = await encodeProgramme(full, { gzip: false });
+    expect(packed[0]).toBe('z');
+    expect(packed.length).toBeLessThan(plain.length);
+    expect(packed.length).toBeLessThanOrEqual(MAX_PAYLOAD);
+    expect((await decodeProgramme(packed)).programme).toEqual(full);
+    // A two-exercise programme makes a short link.
+    expect((await encodeProgramme(sample)).length).toBeLessThan(260);
+  });
+
+  it('makes the plain payload at once, the same as the unpacked encoding (the link the share button has in hand)', async () => {
+    expect(plainPayload(sample)).toBe(await encodeProgramme(sample, { gzip: false }));
+    expect(await decodeProgramme(plainPayload(sample))).toEqual({ ok: true, programme: sample });
+  });
+
+  it('keeps accents and typographic marks whole', async () => {
+    const p = { ...sample, title: 'Séance « été » : jambes', who: 'Zoé Lefèvre' };
+    expect((await decodeProgramme(await encodeProgramme(p))).programme.title).toBe('Séance « été » : jambes');
+  });
+
+  it('refuses every bad payload, never throwing', async () => {
+    const cases = [
+      [undefined, 'empty'], ['', 'empty'], [42, 'empty'],
+      ['x' + 'a'.repeat(10), 'malformed'], ['j<script>', 'malformed'], ['j' + '%%%', 'malformed'], ['z!!', 'malformed'],
+      ['j' + b64('not json'), 'malformed'], ['j' + b64('[]'), 'malformed'], ['j' + b64('{"v":3,"t":"a","x":[["squat",3,10,90]]}'), 'malformed'],
+      ['j' + b64('{"v":"2","t":"a","x":[["squat",3,10,90]]}'), 'malformed'], ['j' + b64('{"v":0,"t":"a","x":[["squat",3,10,90]]}'), 'malformed'],
+      ['j' + b64('{"v":1,"t":"","x":[["squat",3,10,90]]}'), 'malformed'],
+      ['j' + b64('{"v":1,"t":"a","x":[]}'), 'malformed'],
+      ['j' + b64('{"v":1,"t":"a","x":[["Squat",3,10,90]]}'), 'malformed'],
+      ['j' + b64('{"v":1,"t":"a","x":[["__proto__",3,10,90]]}'), 'unknown-exercise'],
+      ['j' + b64('{"v":1,"t":"a","x":[["constructor",3,10,90]]}'), 'unknown-exercise'],
+      ['j' + b64('{"v":1,"t":"a","x":[["chair_stand_test",3,10,90]]}'), 'unknown-exercise'],
+      ['j' + b64('{"v":1,"t":"a","x":[["no_such_lift",3,10,90]]}'), 'unknown-exercise'],
+      ['j' + b64('{"v":1,"t":"a","x":[["squat",0,10,90]]}'), 'bad-value'],
+      ['j' + b64('{"v":1,"t":"a","x":[["squat",3,10.5,90]]}'), 'bad-value'],
+      ['j' + b64('{"v":1,"t":"a","x":[["squat",3,10,9000]]}'), 'bad-value'],
+      ['j' + b64('{"v":1,"t":"a","x":[["squat","3",10,90]]}'), 'bad-value'],
+      ['j' + b64(`{"v":1,"t":"${'a'.repeat(LIMITS.title + 1)}","x":[["squat",3,10,90]]}`), 'bad-value'],
+      ['j' + b64('{"v":1,"t":"a","w":{"x":1},"x":[["squat",3,10,90]]}'), 'bad-value'],
+      ['j' + b64('{"v":1,"t":"a","x":[["squat",3,10,90,"n",7]]}'), 'malformed'],
+      ['j' + toBase64url(new Uint8Array([0xff, 0xfe, 0x7b])), 'malformed'],
+    ];
+    for (const [payload, error] of cases) {
+      const r = await decodeProgramme(payload);
+      expect(r, String(payload).slice(0, 60)).toEqual({ ok: false, error });
+    }
+    // Too many exercises.
+    const many = JSON.stringify({ v: 1, t: 'a', x: Array.from({ length: LIMITS.items + 1 }, () => ['squat', 3, 10, 90]) });
+    expect(await decodeProgramme('j' + b64(many))).toEqual({ ok: false, error: 'malformed' });
+  });
+
+  it('caps the length: a long payload, and a small one that unpacks to too much, are refused', async () => {
+    expect(await decodeProgramme('j' + 'A'.repeat(MAX_PAYLOAD))).toEqual({ ok: false, error: 'too-long' });
+    const bomb = await gz(JSON.stringify({ v: 1, t: 'a', n: ' '.repeat(MAX_JSON * 4), x: [['squat', 3, 10, 90]] }));
+    expect(bomb.length).toBeLessThan(MAX_PAYLOAD);
+    expect(await decodeProgramme(bomb)).toEqual({ ok: false, error: 'too-long' });
+  });
+
+  it('keeps text as text: control characters out, markup left as plain characters', async () => {
+    const r = fromCompact({ v: 1, t: 'A\u0000B\u0007 <img src=x onerror=alert(1)>', n: 'l1\r\nl2\u0001', x: [['squat', 3, 10, 90]] });
+    expect(r.ok).toBe(true);
+    expect(r.programme.title).toBe('A B <img src=x onerror=alert(1)>');
+    expect(r.programme.note).toBe('l1\nl2');
+    expect(cleanText('  a \t b  ')).toBe('a b');
+  });
+
+  it('reads the payload from the address, and builds the link on the app’s own address', () => {
+    expect(payloadOf('#programme=jAbC')).toBe('jAbC');
+    expect(payloadOf('#/programme=zX-_')).toBe('zX-_');
+    expect(payloadOf('#history')).toBe(null);
+    expect(payloadOf('')).toBe(null);
+    expect(programmeLink('https://example.org/workout-vision/#pro', 'jAb')).toBe('https://example.org/workout-vision/#programme=jAb');
+  });
+
+  it('names a programme by its content: the same twice is one', () => {
+    expect(programmeId(sample)).toBe(programmeId(JSON.parse(JSON.stringify(sample))));
+    expect(programmeId(sample)).not.toBe(programmeId({ ...sample, title: 'Autre' }));
+    expect(programmeId(sample)).toMatch(/^p[0-9a-z]+$/);
+  });
+
+  it('takes a draft only once it has a title and an exercise, numbers brought into bounds', () => {
+    expect(programmeOf({ title: '', who: '', note: '', items: sample.items })).toBe(null);
+    expect(programmeOf({ title: 'A', who: '', note: '', items: [] })).toBe(null);
+    const p = programmeOf({ title: ' A ', who: '', note: '', items: [{ key: 'squat', sets: 40, reps: 0, rest: 'x', note: ' n ' }, { key: 'chair_stand_test', sets: 1, reps: 1, rest: 0 }] });
+    expect(p).toEqual({ title: 'A', who: '', note: '', items: [{ key: 'squat', sets: 10, reps: 1, rest: 90, note: 'n' }] });
+    expect(compact(p)).toEqual({ v: 1, t: 'A', x: [['squat', 10, 1, 90, 'n']] });
+    expect(compact({ ...p, items: [{ ...p.items[0], note: '' }] })).toEqual({ v: 1, t: 'A', x: [['squat', 10, 1, 90]] });
+  });
+});
+
+describe('planned against counted', () => {
+  const id = programmeId(sample);
+  const now = new Date(2026, 9, 6, 18, 0);
+  const at = (h, m = 0) => new Date(2026, 9, 6, h, m).getTime();
+  const set = (item, reps, createdAt, extra = {}) => ({ exercise: sample.items[item].key, reps, createdAt, planned: plannedOf(id, item, sample.items[item]), ...extra });
+
+  it('puts each set saved today beside its exercise’s target, oldest first', () => {
+    const sets = [set(0, 9, at(17, 10)), set(0, 10, at(17, 5)), set(1, 12, at(17, 20)), set(0, 10, at(17, 15))];
+    const p = progressOf(sample, id, sets, now);
+    expect(p.items[0]).toEqual({ index: 0, key: 'squat', target: { sets: 3, reps: 10 }, done: [10, 9, 10], kinds: ['a', 'a', 'a'], complete: true, counted: true });
+    expect(p.items[1]).toEqual({ index: 1, key: 'push_up', target: { sets: 4, reps: 12 }, done: [12], kinds: ['a'], complete: false, counted: true });
+    expect([p.complete, p.total]).toEqual([1, 2]);
+    expect(p.last).toBe(at(17, 20));
+    expect(progressOf(sample, id, [], now).last).toBe(null);
+  });
+
+  it('carries the exercise’s key in the target, so it never reaches another exercise’s set', () => {
+    expect(plannedOf(id, 1, sample.items[1])).toEqual({ programme: id, item: 1, key: 'push_up', sets: 4, reps: 12, rest: sample.items[1].rest });
+  });
+
+  it('says how each set was kept: the app’s count, corrected, typed after a refusal, or the app’s proposal confirmed', () => {
+    const result = { count: 10, reps: [], arm: 'right', confidence: 0.9, metadata: { duration: 20 } };
+    const kept = o => keptLetter(savedSet({ result, lift: 'squat', ...o }));
+    expect(kept({ n: 10, corrected: false })).toBe('a');
+    expect(kept({ n: 8, corrected: true })).toBe('c');
+    expect(kept({ n: 7, corrected: true, manual: true })).toBe('t');
+    expect(kept({ n: 6, corrected: true, manual: true, proposal: 6 })).toBe('p');
+    expect(kept({ n: 7, corrected: true, manual: true, proposal: 6 })).toBe('t');
+    const sets = [set(0, 10, at(17, 5), { source: 'counter-core', machineResult: { reps: 10 } }), set(0, 8, at(17, 10), { source: 'manual' })];
+    expect(progressOf(sample, id, sets, now).items[0].kinds).toEqual(['a', 't']);
+  });
+
+  it('finds the latest session of the week once its day is over, and none older or of another programme', () => {
+    const days = n => now.getTime() - n * 86400000;
+    expect(lastDayOf(sample, id, [set(0, 10, days(1)), set(1, 12, days(2))], now)).toEqual(new Date(days(1)));
+    expect(lastDayOf(sample, id, [set(0, 10, days(RESULTS_DAYS_BACK + 1))], now)).toBe(null);
+    expect(lastDayOf(sample, id, [{ ...set(0, 10, days(1)), planned: plannedOf('pother', 0, sample.items[0]) }], now)).toBe(null);
+    expect(lastDayOf(sample, id, [{ ...set(0, 10, days(1)), exercise: 'deadlift' }], now)).toBe(null);
+    expect(lastDayOf(sample, id, [], now)).toBe(null);
+  });
+
+  it('names a day and a time as a coach reads them', () => {
+    expect(dayWords(new Date(2026, 9, 1), 'fr')).toBe('1er octobre');
+    expect(dayWords(new Date(2026, 9, 8), 'fr')).toBe('8 octobre');
+    expect(dayWords(new Date(2026, 9, 9), 'fr', { year: true })).toBe('9 octobre 2026');
+    expect(dayWords(new Date(2026, 9, 1), 'en')).toBe('1 October');
+    expect(timeWords('08:05', 'fr')).toBe(`8${NBSP}h${NBSP}05`);
+    expect(timeWords('19:42', 'en')).toBe('19:42');
+  });
+
+  it('leaves out other days, other programmes and sets saved outside a programme', () => {
+    const sets = [
+      set(0, 10, new Date(2026, 9, 5, 17).getTime()),
+      { ...set(0, 10, at(17)), planned: { ...plannedOf('pother', 0, sample.items[0]) } },
+      { exercise: 'squat', reps: 10, createdAt: at(17) },
+      { ...set(0, 10, at(17)), exercise: 'deadlift' },
+    ];
+    expect(progressOf(sample, id, sets, now).items[0].done).toEqual([]);
+  });
+
+  it('is kept with the set as saved, and printed on the report as "Prévu : 3 × 10"', () => {
+    const planned = plannedOf(id, 0, sample.items[0]);
+    expect(planned).toEqual({ programme: id, item: 0, key: 'squat', sets: 3, reps: 10, rest: 90 });
+    const result = { count: 10, reps: [], arm: 'right', confidence: 0.9, metadata: { duration: 30 }, timestamps: [] };
+    expect(savedSet({ result, lift: 'squat', n: 10, corrected: false, planned }).planned).toEqual(planned);
+    expect('planned' in savedSet({ result, lift: 'squat', n: 10, corrected: false })).toBe(false);
+    // The blind count (blind.js) is kept when the set was asked, "Je ne sais pas" as null; absent otherwise.
+    expect(savedSet({ result, lift: 'squat', n: 10, corrected: false, blind: { count: 9, p: 1 } }).blind).toEqual({ count: 9, p: 1 });
+    expect(savedSet({ result, lift: 'squat', n: 10, corrected: false, blind: { count: null, p: 1 } }).blind).toEqual({ count: null, p: 1 });
+    expect(savedSet({ result, lift: 'squat', n: 10, corrected: true, manual: true, blind: { count: 10, p: 1 } }).blind).toEqual({ count: 10, p: 1 });
+    expect('blind' in savedSet({ result, lift: 'squat', n: 10, corrected: false })).toBe(false);
+    expect(savedSet({ result, lift: 'squat', n: 8, corrected: true, manual: true, planned }).planned).toEqual(planned);
+    expect(targetText(planned)).toBe(`3${NBSP}×${NBSP}10`);
+    const base = { lang: 'fr', date: new Date(2026, 9, 6), liftName: 'Squat', count: 10, counted: 10, arm: 'right' };
+    expect(reportSheet({ ...base, planned }).planned).toBe(`Prévu${NBSP}: 3${NBSP}×${NBSP}10`);
+    expect(reportSheet({ ...base, lang: 'en', planned }).planned).toBe(`Planned: 3${NBSP}×${NBSP}10`);
+    expect(reportSheet(base).planned).toBe('');
+    expect(reportSheet({ ...base, planned: { sets: 'x' } }).planned).toBe('');
+  });
+
+  it('keeps the target through a read of the stored set, and drops one that is not a target', () => {
+    const planned = plannedOf(id, 0, sample.items[0]);
+    const stored = { id: 'w1', exercise: 'squat', reps: 10, createdAt: 1, planned };
+    expect(validateWorkout(stored).sanitized.planned).toEqual(planned);
+    for (const bad of [{ programme: 3 }, { ...planned, sets: 1.5 }, { ...planned, programme: 'x'.repeat(40) }, 'p1']) {
+      expect('planned' in validateWorkout({ ...stored, planned: bad }).sanitized).toBe(false);
+    }
+  });
+
+  it('keeps a confirmed proposal and a body check through a read, so the history and the results can tell them apart', () => {
+    const result = { count: 0, reps: [], arm: null, confidence: null, metadata: { duration: 20 } };
+    const stored = { id: 'w2', createdAt: 1, ...savedSet({ result, lift: 'squat', n: 6, corrected: true, manual: true, proposal: 6 }) };
+    const read = validateWorkout(stored).sanitized;
+    expect(read.proposal).toEqual({ reps: 6, by: 'psc' });
+    expect(keptLetter(read)).toBe('p');
+    expect(validateWorkout({ ...stored, bodyCheck: { agreement: 0.4, second: 9 } }).sanitized.bodyCheck).toEqual({ agreement: 0.4, second: 9 });
+    for (const bad of [{ reps: 6 }, { reps: 6.5, by: 'psc' }, { reps: -1, by: 'psc' }, 'psc']) {
+      expect('proposal' in validateWorkout({ ...stored, proposal: bad }).sanitized).toBe(false);
+    }
+    for (const bad of [{ agreement: 'x', second: 9 }, { agreement: 0.4, second: 9.5 }, 3]) {
+      expect('bodyCheck' in validateWorkout({ ...stored, bodyCheck: bad }).sanitized).toBe(false);
+    }
+  });
+  it('keeps a blind count through a read, and drops one that is not a count with its share', () => {
+    const result = { count: 7, reps: [], arm: 'left', confidence: 0.9, metadata: { duration: 20 } };
+    const stored = { id: 'w3', createdAt: 1, ...savedSet({ result, lift: 'squat', n: 8, corrected: true, blind: { count: 8, p: 1 } }) };
+    expect(validateWorkout(stored).sanitized.blind).toEqual({ count: 8, p: 1 });
+    expect(validateWorkout({ ...stored, blind: { count: null, p: 1 } }).sanitized.blind).toEqual({ count: null, p: 1 });
+    for (const bad of [{ count: 0, p: 1 }, { count: 100, p: 1 }, { count: 8.5, p: 1 }, { count: 8 }, { count: 8, p: 2 }, 8]) {
+      expect('blind' in validateWorkout({ ...stored, blind: bad }).sanitized).toBe(false);
+    }
+  });
+
+  it('sets the target on the report’s PDF, beside the count', () => {
+    const planned = plannedOf(id, 0, sample.items[0]);
+    const texts = [];
+    const hook = ['preProcessText', ({ text }) => { texts.push(Array.isArray(text) ? text.join('') : text); }];
+    jsPDF.API.events.push(hook);
+    try { reportPdf(reportSheet({ lang: 'fr', date: new Date(2026, 9, 6), liftName: 'Squat', count: 9, counted: 9, arm: 'right', planned })); } finally { jsPDF.API.events.splice(jsPDF.API.events.indexOf(hook), 1); }
+    expect(texts.join('')).toContain('Prévu');
+    expect(texts.join('').replace(/\s/g, '')).toContain('3×10');
+  });
+});
+
+describe('the programme’s PDF', () => {
+  // jsPDF tells its listeners of every text it sets (its events, as its plugins use them); the pages are counted in
+  // the file, as report.test.js counts them.
+  async function drawn(run) {
+    const texts = [];
+    const hook = ['preProcessText', ({ text }) => { texts.push(Array.isArray(text) ? text.join('') : text); }];
+    jsPDF.API.events.push(hook);
+    let blob;
+    try { blob = run(); } finally { jsPDF.API.events.splice(jsPDF.API.events.indexOf(hook), 1); }
+    const pages = Buffer.from(await blob.arrayBuffer()).toString('latin1').match(/\/Type \/Page\b/g).length;
+    return { text: texts.join(''), pages, blob };
+  }
+  const date = new Date(2026, 9, 6);
+
+  it('sets the title, for whom, the date, each exercise with sets × reps, rest and cue, and the note', async () => {
+    const { text, pages, blob } = await drawn(() => programmePdf(sample, { lang: 'fr', date }));
+    expect(blob.type).toBe('application/pdf');
+    expect(blob.size).toBeGreaterThan(2000);
+    expect(pages).toBe(1);
+    const flat = text.replace(/\s/g, '');
+    for (const s of ['PROGRAMME', '6OCTOBRE2026', 'Hautducorps', 'POUR', 'Camille', 'EXERCICES', 'Squat', 'Descendrelentement', '3×10', '4×12', 'Récup.1min30', 'Récup.1min', 'NOTE', 'Échauffement10min.', 'Boireentrelesséries.']) expect(flat).toContain(s);
+    // One block per exercise since the exercise sheet (14 October 2026): no table heading.
+    for (const s of ['SÉRIES×RÉP.', 'RÉCUP.']) expect(flat).not.toContain(s);
+    expect(text).not.toMatch(/Workout ?Vision/i);
+  });
+
+  it('runs onto more pages for a long programme, numbering them, and writes the words in English', async () => {
+    const long = { ...sample, items: Array.from({ length: LIMITS.items }, (_, i) => ({ key: 'squat', sets: 3, reps: 10, rest: 45, note: `Consigne ${i}, tempo lent, pause en bas` })) };
+    const { text, pages } = await drawn(() => programmePdf(long, { lang: 'en', date }));
+    expect(pages).toBeGreaterThan(1);
+    expect(text).toContain(`1 / ${pages}`);
+    expect(text.replace(/\s/g, '')).toContain('Rest45s');
+  });
+
+  it('prints the link as a QR code with how to use it, and leaves it out without a link or for one too long to scan', async () => {
+    const link = `https://david-dabert.github.io/workout-vision/#programme=z${'A'.repeat(400)}`;
+    const qr = programmeQr(link);
+    expect(qr.version).toBeLessThanOrEqual(QR_MAX_VERSION);
+    expect(qr.size).toBe(17 + 4 * qr.version);
+    // The three finder patterns: the corners' 7 x 7 squares are dark on their edge.
+    for (const [r, c] of [[0, 0], [0, qr.size - 7], [qr.size - 7, 0]]) expect([0, 6].every(k => qr.dark(r + k, c) && qr.dark(r, c + k))).toBe(true);
+    expect(programmeQr(null)).toBeNull();
+    // Past version 37 even a block 200 points wide would set modules under 0.4 mm: no code (the coach is told, Pro.jsx).
+    expect(programmeQr(`https://x/#programme=z${'a'.repeat(2600)}`)).toBeNull();
+    expect(programmeQr(`https://x/#programme=z${'a'.repeat(9000)}`)).toBeNull();
+    const withQr = await drawn(() => programmePdf(sample, { lang: 'fr', date, link }));
+    const flat = withQr.text.replace(/\s/g, '');
+    expect(flat).toContain('OUVRIRLEPROGRAMME');
+    expect(withQr.text).not.toMatch(/Workout ?Vision/i);
+    const without = await drawn(() => programmePdf(sample, { lang: 'fr', date }));
+    expect(without.text.replace(/\s/g, '')).not.toContain('OUVRIRLEPROGRAMME');
+    expect(withQr.blob.size).toBeGreaterThan(without.blob.size);
+    // A short programme keeps its one page with the code.
+    expect(withQr.pages).toBe(1);
+  });
+
+  it('draws a code past version 15 with the foot at the end of the sheet, its modules never under 0.4 mm', async () => {
+    const top = programmeQr(`https://x/#programme=z${'a'.repeat(300)}`);
+    expect([top.top, top.side]).toEqual([true, QR_SIDE]);
+    expect(top.side / (top.size + 8)).toBeGreaterThanOrEqual(QR_MODULE_MIN - 1e-9);
+    // Version 15 at 96 pt would set 0.398 mm modules: it goes to the end of the sheet.
+    const n15 = Array.from({ length: 200 }, (_, k) => 380 + k).find(n => programmeQr(`https://x/#programme=z${'a'.repeat(n)}`).version === 15);
+    expect(n15).toBeDefined();
+    const v15 = programmeQr(`https://x/#programme=z${'a'.repeat(n15)}`);
+    expect(v15.top).toBe(false);
+    expect(v15.side / (v15.size + 8)).toBeGreaterThanOrEqual(QR_MODULE_MIN - 1e-9);
+    for (const n of [600, 900, 1400, 2400]) {
+      const qr = programmeQr(`https://x/#programme=z${'a'.repeat(n)}`);
+      expect(qr.version).toBeGreaterThan(QR_MAX_VERSION);
+      expect(qr.top).toBe(false);
+      expect(qr.side).toBeGreaterThan(QR_SIDE);
+      expect(qr.side).toBeLessThanOrEqual(QR_BLOCK_MAX);
+      expect(qr.side / (qr.size + 8)).toBeGreaterThanOrEqual(QR_MODULE_MIN - 1e-9);
+    }
+    // A cued programme of 12 exercises: its packed link needs a block, which the sheet holds, with its label.
+    const cues = ['Pause 1 s en haut, menton rentré', 'Descendre lentement, trois secondes', 'Coudes serrés le long du corps',
+      'Omoplates basses, poitrine ouverte', 'Dos plat, hanches en arrière', 'Genoux dans l’axe des pieds', 'Monter jusqu’aux épaules, pas plus',
+      'Pieds ancrés, fesses sur le banc', 'Serrer les fessiers en haut', 'Gainage, ne pas cambrer', 'Grand pas, buste droit', 'Respirer, tenir la ligne'];
+    const items = cues.map((note, i) => ({ key: i % 2 ? 'squat' : 'push_up', sets: 3, reps: 10, rest: 90, note }));
+    const long = { ...sample, items };
+    const link = `https://david-dabert.github.io/workout-vision/#programme=${packNow(long)}`;
+    const qr = programmeQr(link);
+    expect(qr.top).toBe(false);
+    const sheet = await drawn(() => programmePdf(long, { lang: 'fr', date, qr }));
+    expect(sheet.text.replace(/\s/g, '')).toContain('OUVRIRLEPROGRAMME');
+    expect(sheet.pages).toBeLessThanOrEqual(3);
+  });
+
+  it('packs the link at once, which the client’s phone reads back as the programme', async () => {
+    const payload = packNow(sample);
+    expect(payload[0]).toBe('z');
+    expect(await decodeProgramme(payload)).toEqual({ ok: true, programme: sample });
+    const one = { title: 'A', who: '', note: '', items: [{ key: 'squat', sets: 3, reps: 10, rest: 90, note: '' }] };
+    expect(await decodeProgramme(packNow(one))).toEqual({ ok: true, programme: one });
+  });
+
+  it('reads its words from the copy, and names its file in ASCII', () => {
+    const s = programmeSheet(sample, { lang: 'fr', date });
+    expect(s.people).toEqual([['Pour', 'Camille'], ['Exercices', '2']]);
+    expect(s.rows[0]).toEqual({
+      index: '01', name: 'Squat', note: 'Descendre lentement', target: `3${NBSP}×${NBSP}10`, rest: `1${NBSP}min${NBSP}30`,
+      details: `Récup.${NBSP}1${NBSP}min${NBSP}30`, filmed: true, hold: 0, side: 'both', drawing: null,
+    });
+    expect([s.foot, s.credit]).toEqual([PRO.fr.pdfFoot, '']);
+    expect(programmeFileName(sample, { lang: 'fr', date })).toBe('programme-camille-2026-10-06.pdf');
+    expect(programmeFileName({ ...sample, who: '' }, { lang: 'en', date })).toBe('programme-haut-du-corps-semaine-1-2026-10-06.pdf');
+  });
+});
+
+describe('the coach’s drafts', () => {
+  const memory = () => { const m = new Map(); return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) }; };
+  const draft = (title, who = '', at = 1) => ({ ...newDraft(at), title, who, items: [{ key: 'squat', sets: 3, reps: 10, rest: 90, note: '' }] });
+
+  it('keeps nothing of an empty draft, and drops an old empty one at the next save', () => {
+    vi.stubGlobal('localStorage', memory());
+    try {
+      expect(isEmptyDraft(newDraft())).toBe(true);
+      expect(isEmptyDraft({ ...newDraft(), who: 'Camille' })).toBe(false);
+      localStorage.setItem('wv_pro_drafts', JSON.stringify([newDraft(1), { id: 'x' }]));
+      expect(saveDraft(draft('Semaine 1'))).toBe(true);
+      expect(loadDrafts().map(d => d.title)).toEqual(['Semaine 1']);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('refuses a new draft past the cap, and never drops one the coach kept', () => {
+    vi.stubGlobal('localStorage', memory());
+    try {
+      localStorage.setItem('wv_pro_drafts', JSON.stringify(Array.from({ length: MAX_DRAFTS }, (_, i) => draft(`P${i}`, '', i))));
+      expect(saveDraft(draft('Une de plus'))).toBe('full');
+      expect(loadDrafts()).toHaveLength(MAX_DRAFTS);
+      // A draft already kept is still changed in place.
+      const first = loadDrafts()[0];
+      expect(saveDraft({ ...first, title: 'Renommé' })).toBe(true);
+      expect(loadDrafts().some(d => d.title === 'Renommé')).toBe(true);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('opens the coach’s own draft from a client’s results, or makes one from them', () => {
+    vi.stubGlobal('localStorage', memory());
+    try {
+      const results = { title: 'Semaine 1', who: 'Camille', day: '2026-10-09', time: '', items: [{ key: 'squat', sets: 4, reps: 8, done: [8] }, { key: 'push_up', sets: 3, reps: 12, done: [] }] };
+      const made = draftFromResults(results);
+      expect(made.kept).toBe(true);
+      // Made from the results, it carries no cue and default rests: the editor says so (rebuilt).
+      expect(made.rebuilt).toBe(true);
+      expect(made.draft).toMatchObject({ title: 'Semaine 1', who: 'Camille', note: '' });
+      expect(made.draft.items).toEqual([{ key: 'squat', sets: 4, reps: 8, rest: 90, note: '' }, { key: 'push_up', sets: 3, reps: 12, rest: 90, note: '' }]);
+      // Once on the phone, the same results lead to that draft, with whatever the coach changed in it since.
+      saveDraft({ ...made.draft, items: [{ ...made.draft.items[0], rest: 120, note: 'Lent' }] });
+      const again = draftFromResults(results);
+      expect(again.draft.id).toBe(made.draft.id);
+      expect(again.rebuilt).toBe(false);
+      expect(again.draft.items[0]).toMatchObject({ rest: 120, note: 'Lent' });
+      expect(draftFromResults({ ...results, who: 'Zine' }).draft.id).not.toBe(made.draft.id);
+      // A draft's title as typed, with a double space or a no-break space: its link, and its results, carry one space.
+      const typed = { ...newDraft(5), title: 'Semaine  2\u00A0: jambes', who: ' Lou ', items: [{ key: 'squat', sets: 3, reps: 10, rest: 120, note: 'Lent' }] };
+      saveDraft(typed);
+      expect(draftFromResults({ ...results, title: 'Semaine 2 : jambes', who: 'Lou' }).draft.id).toBe(typed.id);
+    } finally { vi.unstubAllGlobals(); }
+  });
+});
+
+describe('a programme the coach changed and sent again', () => {
+  const memory = () => { const m = new Map(); return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) }; };
+  const v1 = { title: 'Haut du corps', who: 'Camille', note: '', items: [
+    { key: 'squat', sets: 3, reps: 10, rest: 90, note: '' }, { key: 'push_up', sets: 3, reps: 12, rest: 60, note: '' }] };
+  // The coach raised the squat's reps and put a curl first: every place moved.
+  const v2 = { ...v1, items: [{ key: 'bicep_curl', sets: 3, reps: 10, rest: 60, note: '' }, { ...v1.items[0], reps: 12 }, v1.items[1]] };
+
+  it('remembers the earlier version, which stays listed; another person’s programme is apart', () => {
+    vi.stubGlobal('localStorage', memory());
+    try {
+      const id1 = keepReceived(v1, 1000).id, other = keepReceived({ ...v1, who: 'Zine' }, 1500).id, id2 = keepReceived(v2, 2000).id;
+      const list = loadReceived();
+      expect(list.map(r => r.id)).toEqual([id2, other, id1]);
+      expect(list[0].previous).toEqual([id1]);
+      expect(list[0].receivedAt).toBe(2000);
+      expect(list[1].previous).toEqual([]);
+      // The same version opened again keeps what it remembers.
+      keepReceived(v2, 3000);
+      expect(loadReceived()[0].previous).toEqual([id1]);
+      // The earlier version's link opened again: it comes first, the newer one stays, and it borrows none of its sets.
+      keepReceived(v1, 4000);
+      const again = loadReceived();
+      expect(again.map(r => r.id)).toEqual([id1, id2, other]);
+      expect(again[0].previous).toEqual([]);
+      expect(again[1].previous).toEqual([id1]);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  // Safari with every cookie blocked throws on localStorage (11 October 2026): the programme is not kept, and says so,
+  // so the screen leaves the link in the address and the app holds it for the visit (Programme.jsx, App.jsx).
+  it('says whether the phone kept the programme', () => {
+    vi.stubGlobal('localStorage', memory());
+    try { expect(keepReceived(v1, 1000)).toEqual({ id: programmeId(v1), kept: true }); } finally { vi.unstubAllGlobals(); }
+    const refused = () => { throw new DOMException('The operation is insecure.', 'SecurityError'); };
+    vi.stubGlobal('localStorage', { getItem: refused, setItem: refused, removeItem: refused });
+    try {
+      expect(keepReceived(v1, 1000)).toEqual({ id: programmeId(v1), kept: false });
+      expect(loadReceived()).toEqual([]);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('puts a set of the earlier version on the exercise with the target it was filmed for, when the exercise is there twice', () => {
+    const w1 = { ...v1, items: [{ key: 'squat', sets: 3, reps: 10, rest: 90, note: '' }, { key: 'squat', sets: 2, reps: 20, rest: 60, note: '' }] };
+    const w2 = { ...w1, items: [{ key: 'bicep_curl', sets: 3, reps: 10, rest: 60, note: '' }, ...w1.items] };
+    const now = new Date(2026, 9, 9, 18, 30), at = m => new Date(2026, 9, 9, 18, m).getTime();
+    const sets = [
+      { exercise: 'squat', reps: 10, createdAt: at(1), planned: plannedOf('pw1', 0, w1.items[0]) },
+      { exercise: 'squat', reps: 20, createdAt: at(5), planned: plannedOf('pw1', 1, w1.items[1]) },
+    ];
+    expect(progressOf(w2, ['pw2', 'pw1'], sets, now).items.map(i => i.done)).toEqual([[], [10], [20]]);
+  });
+
+  it('counts the sets of the day filmed from the earlier version, each with its exercise', () => {
+    vi.stubGlobal('localStorage', memory());
+    try {
+      const id1 = keepReceived(v1, 1000).id, id2 = keepReceived(v2, 2000).id, now = new Date(2026, 9, 9, 18, 30);
+      const at = m => new Date(2026, 9, 9, 18, m).getTime();
+      const sets = [
+        { exercise: 'squat', reps: 10, createdAt: at(1), planned: plannedOf(id1, 0, v1.items[0]) },
+        { exercise: 'push_up', reps: 12, createdAt: at(5), planned: plannedOf(id1, 1, v1.items[1]) },
+        { exercise: 'bicep_curl', reps: 10, createdAt: at(9), planned: plannedOf(id2, 0, v2.items[0]) },
+      ];
+      const progress = progressOf(v2, [id2, ...loadReceived().find(r => r.id === id2).previous], sets, now);
+      expect(progress.items.map(i => i.done)).toEqual([[10], [10], [12]]);
+      // Without the earlier version, its sets are not this programme's.
+      expect(progressOf(v2, id2, sets, now).items.map(i => i.done)).toEqual([[10], [], []]);
+      expect(lastDayOf(v2, [id2, id1], sets.slice(0, 2), now)).toEqual(new Date(at(5)));
+    } finally { vi.unstubAllGlobals(); }
+  });
+});
+
+describe('the copy of the programmes', () => {
+  // Wellness only (6 October): no word of care. Physiotherapists are named as users, and only so; "kinésithérapeute" and
+  // "physiotherapist" hold "thérap" inside a word, which the word boundary lets through.
+  const MEDICAL = /\bpatients?\b|r[ée][ée]ducation|rehabilitat|diagnos|traitement|\bth[ée]rap|\btreatment|gu[ée]ri|\bheal|\bcure\b|\binjur|\bbless|douleur|\bpain\b|sympt[oô]m|patholog|m[ée]dic|sant[ée]/i;
+  for (const lang of ['fr', 'en']) {
+    it(`has no medical word (${lang})`, () => {
+      const strings = allStrings(lang);
+      expect(strings.length).toBeGreaterThan(80);
+      for (const s of strings) expect(s, s).not.toMatch(MEDICAL);
+    });
+  }
+  it('names coaches and physiotherapists as users', () => {
+    expect(PRO.fr.choiceRowSub).toBe('Pour les coachs et les kinésithérapeutes');
+    expect(PRO.en.choiceRowSub).toBe('For coaches and physiotherapists');
+  });
+  it('has the same keys in both languages, nested ones included', () => {
+    const keys = o => Object.keys(o).sort();
+    expect(keys(PRO.en)).toEqual(keys(PRO.fr));
+    expect(keys(PRO.en.errors)).toEqual(keys(PRO.fr.errors));
+    for (const k of keys(PRO.fr)) if (PRO.fr[k] && typeof PRO.fr[k] === 'object') expect(keys(PRO.en[k]), k).toEqual(keys(PRO.fr[k]));
+  });
+});
+
+describe('the results sent back to the coach', () => {
+  const now = new Date(2026, 9, 9, 18, 30);
+  const saved = [
+    { exercise: 'squat', reps: 10, source: 'counter-core', machineResult: { reps: 10 }, createdAt: new Date(2026, 9, 9, 18, 26).getTime(), planned: { programme: 'p1', item: 0 } },
+    { exercise: 'squat', reps: 8, source: 'manual', afterRefusal: true, createdAt: new Date(2026, 9, 9, 18, 28).getTime(), planned: { programme: 'p1', item: 0 } },
+  ];
+  const results = () => resultsOf(sample, progressOf(sample, 'p1', saved, now), now);
+
+  it('carry the day and the time of its latest set, and per exercise the target, the reps of each set saved that day and how each was kept', () => {
+    expect(results()).toEqual({ title: 'Haut du corps, semaine 1', who: 'Camille', day: '2026-10-09', time: '18:28', items: [
+      { key: 'squat', sets: 3, reps: 10, done: [10, 8], kinds: ['a', 't'] },
+      { key: 'push_up', sets: 4, reps: 12, done: [], kinds: [] },
+    ] });
+  });
+
+  it('a link of the day before, with no time and no kinds, still opens: its sets read as before', async () => {
+    const old = { v: 1, t: 'Séance', d: '2026-10-09', x: [['squat', 3, 10, [10, 8]]] };
+    expect(await decodeResults('j' + b64(JSON.stringify(old)))).toEqual({ ok: true, results: {
+      title: 'Séance', who: '', day: '2026-10-09', time: '', items: [{ key: 'squat', sets: 3, reps: 10, done: [10, 8] }],
+    } });
+  });
+
+  it('come back whole from the plain and the packed link, and the address gives their payload', async () => {
+    const r = results();
+    for (const payload of [plainResultsPayload(r), await encodeResults(r)]) expect(await decodeResults(payload)).toEqual({ ok: true, results: r });
+    const link = resultsLink('https://example.test/workout-vision/#programme', plainResultsPayload(r));
+    expect(link.startsWith('https://example.test/workout-vision/#resultats=j')).toBe(true);
+    expect(resultsPayloadOf(new URL(link).hash)).toBe(plainResultsPayload(r));
+    expect(resultsPayloadOf('#programme=jabc')).toBeNull();
+  });
+
+  it('refuse a damaged or forged link without throwing', async () => {
+    const r = results();
+    const forged = async x => decodeResults(b64(JSON.stringify(x)).replace(/^/, 'j'));
+    const ok = { v: 1, t: 'Séance', d: '2026-10-09', x: [['squat', 3, 10, [10, 8]]] };
+    expect((await forged(ok)).ok).toBe(true);
+    expect(await decodeResults('')).toEqual({ ok: false, error: 'empty' });
+    expect(await decodeResults('j!!')).toEqual({ ok: false, error: 'malformed' });
+    expect(await forged({ ...ok, v: 3 })).toEqual({ ok: false, error: 'malformed' });
+    expect(await forged({ ...ok, d: '9 octobre' })).toEqual({ ok: false, error: 'malformed' });
+    expect(await forged({ ...ok, x: [['not_an_exercise', 3, 10, []]] })).toEqual({ ok: false, error: 'unknown-exercise' });
+    expect(await forged({ ...ok, x: [['squat', 3, 10, [10, 1000]]] })).toEqual({ ok: false, error: 'bad-value' });
+    expect(await forged({ ...ok, x: [['squat', 3, 10, [10, 8.5]]] })).toEqual({ ok: false, error: 'bad-value' });
+    expect(await forged({ ...ok, x: [['squat', 3, 10, Array(RESULT_LIMITS.done + 1).fill(10)]] })).toEqual({ ok: false, error: 'bad-value' });
+    expect(await forged({ ...ok, x: [['squat', 0, 10, []]] })).toEqual({ ok: false, error: 'bad-value' });
+    expect(await forged({ ...ok, t: 'x'.repeat(200) })).toEqual({ ok: false, error: 'bad-value' });
+    // The time and the kinds, when present, are checked as the rest: one letter per set, one string per exercise.
+    expect((await forged({ ...ok, h: '07:05', k: ['ap'] })).ok).toBe(true);
+    for (const bad of [{ h: '24:00' }, { h: '7:05' }, { h: 705 }, { k: ['a'] }, { k: ['ax'] }, { k: 'ap' }, { k: ['ap', ''] }, { k: [['a', 'p']] }]) {
+      expect(await forged({ ...ok, ...bad })).toEqual({ ok: false, error: 'malformed' });
+    }
+    expect(r.items).toHaveLength(2);
+  });
+});
+
+// An exercise withdrawn from the offer (offer.js, WITHDRAWN) after the coach sent the programme stays known: the client
+// keeps the programme, the coach's link and the results still open, and the day is complete once the exercises the app
+// counts are (live-app audit, 10 October 2026: a withdrawal made every programme naming the exercise vanish).
+describe('an exercise withdrawn after the programme was sent', () => {
+  const memory = () => { const m = new Map(); return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) }; };
+  const withdrawn = { ...sample, items: [sample.items[0], { key: 'dead_bug', sets: 3, reps: 10, rest: 60, note: '' }] };
+  const now = new Date(2026, 9, 9, 18, 30);
+
+  it('is still read from the link, packed or plain, and from the results', async () => {
+    for (const gzip of [true, false]) expect(await decodeProgramme(await encodeProgramme(withdrawn, { gzip }))).toEqual({ ok: true, programme: withdrawn });
+    const r = resultsOf(withdrawn, progressOf(withdrawn, 'p1', [], now), now);
+    expect(await decodeResults(await encodeResults(r))).toEqual({ ok: true, results: r });
+  });
+
+  it('stays among the programmes kept on the phone, and in the link the coach sends', () => {
+    vi.stubGlobal('localStorage', memory());
+    try {
+      keepReceived(withdrawn, 1000);
+      expect(loadReceived().map(r => r.programme)).toEqual([withdrawn]);
+    } finally { vi.unstubAllGlobals(); }
+    expect(programmeOf(withdrawn).items.map(i => i.key)).toEqual(['squat', 'dead_bug']);
+  });
+
+  it('does not count toward the day', () => {
+    const sets = [18, 20, 22].map(m => ({ exercise: 'squat', reps: 10, source: 'counter-core', machineResult: { reps: 10 }, createdAt: new Date(2026, 9, 9, 18, m).getTime(), planned: { programme: 'p1', item: 0 } }));
+    const p = progressOf(withdrawn, 'p1', sets, now);
+    expect([p.complete, p.total]).toEqual([1, 1]);
+    expect(p.items.map(i => i.counted)).toEqual([true, false]);
+  });
+});
+
+// The exercise sheet (14 October 2026): a hold, a side and a frequency, each optional and absent by default, and any
+// exercise of the guide, whether the app counts it or not. Links issued before it: programme-compat.test.js.
+describe('the exercise sheet’s model', () => {
+  const memory = () => { const m = new Map(); return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) }; };
+  const sheet = {
+    title: 'Fiche du 14 octobre', who: 'Camille', note: '', frequency: { times: 3, per: 'week' },
+    items: [
+      { key: 'squat', sets: 3, reps: 10, rest: 90, note: '', side: 'each' },
+      { key: 'plank', sets: 3, reps: 10, rest: 45, note: 'Dos plat', holdSec: 45 },
+      { key: 'dead_bug', sets: 3, reps: 10, rest: 60, note: '' },
+      { key: 'childs_pose', sets: 1, reps: 1, rest: 0, note: '', holdSec: 60, side: 'left' },
+    ],
+  };
+
+  it('reads back holds, sides and the frequency, packed, plain, and packed within the tap', async () => {
+    for (const gzip of [true, false]) expect(await decodeProgramme(await encodeProgramme(sheet, { gzip }))).toEqual({ ok: true, programme: sheet });
+    expect(await decodeProgramme(packNow(sheet))).toEqual({ ok: true, programme: sheet });
+    expect(await decodeProgramme(plainPayload(sheet))).toEqual({ ok: true, programme: sheet });
+  });
+
+  it('writes its keys after the exercises, and none for a programme without them', () => {
+    const c = compact(sheet);
+    expect(Object.keys(c)).toEqual(['v', 't', 'w', 'x', 'f', 'h', 's']);
+    expect([c.f, c.h, c.s]).toEqual([[3, 'w'], [0, 45, 0, 60], 'ebbl']);
+    // Version 2 with a hold or a side, so an app of before the sheet refuses the link rather than show a hold as reps
+    // to film, or drop "each side"; version 1 without them, a frequency alone included (an older app leaves it out).
+    expect(c.v).toBe(SHEET_VERSION);
+    expect(SHEET_VERSION).toBe(2);
+    const reps = sheet.items.map(({ holdSec: _h, side: _s, ...i }) => i);
+    expect(compact({ ...sheet, items: reps.map((i, k) => (k ? i : { ...i, holdSec: 30 })) }).v).toBe(2);
+    expect(compact({ ...sheet, items: reps.map((i, k) => (k ? i : { ...i, side: 'left' })) }).v).toBe(2);
+    expect(compact({ ...sheet, items: reps }).v).toBe(1);
+    expect(compact({ ...sample, frequency: { times: 3, per: 'week' } }).v).toBe(1);
+    expect(Object.keys(compact({ ...sheet, note: 'n' }))).toEqual(['v', 't', 'w', 'n', 'x', 'f', 'h', 's']);
+    expect(Object.keys(compact(sample))).toEqual(['v', 't', 'w', 'n', 'x']);
+    // Defaults written out are the same programme, with the same id.
+    const explicit = { ...sample, items: sample.items.map(i => ({ ...i, holdSec: 0, side: 'both' })) };
+    expect(compact(explicit)).toEqual(compact(sample));
+    expect(programmeId(explicit)).toBe(programmeId(sample));
+    expect(compact({ ...sample, frequency: { times: 1, per: 'day' } }).f).toEqual([1, 'd']);
+    expect(programmeId({ ...sample, frequency: { times: 1, per: 'day' } })).not.toBe(programmeId(sample));
+  });
+
+  it('gives the defaults when absent, and brings a typed hold or frequency into bounds', () => {
+    expect(SIDES).toEqual(['both', 'left', 'right', 'each']);
+    expect(DEFAULT_HOLD).toBe(30);
+    expect([holdOf({}), holdOf({ holdSec: 0 }), holdOf({ holdSec: 45 }), holdOf(null)]).toEqual([0, 0, 45, 0]);
+    expect([sideOf({}), sideOf({ side: 'each' }), sideOf({ side: 'up' }), sideOf(null)]).toEqual(['both', 'each', 'both', 'both']);
+    expect(frequencyOf(sample)).toBeNull();
+    expect(frequencyOf({ frequency: { times: 3, per: 'week' } })).toEqual({ times: 3, per: 'week' });
+    for (const bad of [{ times: 0, per: 'week' }, { times: 15, per: 'day' }, { times: 2.5, per: 'day' }, { times: '3', per: 'week' }, { times: null, per: 'week' }, { times: 3, per: 'month' }, 'x']) {
+      expect(frequencyOf({ frequency: bad }), JSON.stringify(bad)).toBeNull();
+    }
+    // A hold and a side are written only when set, the hold clamped.
+    expect(fixItem({ key: 'plank', sets: 3, reps: 10, rest: 45, note: '', holdSec: 999, side: 'right' })).toEqual({ key: 'plank', sets: 3, reps: 10, rest: 45, note: '', holdSec: 300, side: 'right' });
+    expect(fixItem({ key: 'plank', sets: 3, reps: 10, rest: 45, note: '', holdSec: 0.4 }).holdSec).toBe(1);
+    for (const extra of [{ holdSec: 0, side: 'both' }, { holdSec: NaN, side: 'up' }, { holdSec: '45', side: 7 }, {}]) {
+      expect(fixItem({ key: 'squat', sets: 3, reps: 10, rest: 90, note: '', ...extra }), JSON.stringify(extra)).toEqual({ key: 'squat', sets: 3, reps: 10, rest: 90, note: '' });
+    }
+    expect([fixHold(''), fixHold('0'), fixHold('45'), fixHold('999')]).toEqual([30, 1, 45, 300]);
+    expect([fixTimes(''), fixTimes('abc'), fixTimes('0'), fixTimes('3'), fixTimes('99')]).toEqual([null, null, 1, 3, 14]);
+    // Reps or a hold: the reps stay for a switch back, a hold set before is kept.
+    const squat = { key: 'squat', sets: 3, reps: 12, rest: 90, note: '' };
+    expect(withKind(squat, 'hold')).toEqual({ ...squat, holdSec: DEFAULT_HOLD });
+    expect(withKind({ ...squat, holdSec: 45 }, 'hold').holdSec).toBe(45);
+    expect(withKind({ ...squat, holdSec: 45 }, 'reps')).toEqual({ ...squat, holdSec: 0 });
+    expect(fixItem(withKind({ ...squat, holdSec: 45 }, 'reps'))).toEqual(squat);
+    expect(withSide(squat, 'each').side).toBe('each');
+    expect(withSide(squat, 'up').side).toBe('both');
+  });
+
+  it('takes the frequency from a draft only when it is whole and in bounds', () => {
+    const draft = { title: 'A', who: '', note: '', items: [{ key: 'squat', sets: 3, reps: 10, rest: 90, note: '' }] };
+    expect(programmeOf(draft)).not.toHaveProperty('frequency');
+    expect(programmeOf({ ...draft, frequency: { times: null, per: 'week' } })).not.toHaveProperty('frequency');
+    expect(programmeOf({ ...draft, frequency: { times: 20, per: 'week' } })).not.toHaveProperty('frequency');
+    expect(programmeOf({ ...draft, frequency: { times: 2, per: 'day' } }).frequency).toEqual({ times: 2, per: 'day' });
+  });
+
+  it('refuses a damaged hold, side or frequency, never throwing; unknown keys stay ignored', () => {
+    const ok = { v: 1, t: 'a', x: [['squat', 3, 10, 90], ['plank', 3, 10, 45]] };
+    expect(fromCompact({ ...ok, h: [0, 45], s: 'eb', f: [3, 'w'], z: [1] }).ok).toBe(true);
+    // Read as version 2, and as version 1 (a sheet's link written before its version was raised, never released).
+    for (const v of [1, 2]) expect(fromCompact({ ...ok, v, h: [0, 45], s: 'eb' }), String(v)).toEqual({ ok: true, programme: { title: 'a', who: '', note: '', items: [
+      { key: 'squat', sets: 3, reps: 10, rest: 90, note: '', side: 'each' }, { key: 'plank', sets: 3, reps: 10, rest: 45, note: '', holdSec: 45 }] } });
+    expect(fromCompact({ ...ok, v: 2 }).ok).toBe(true);
+    expect(fromCompact({ ...ok, v: 3, h: [0, 45] })).toEqual({ ok: false, error: 'malformed' });
+    const cases = [
+      [{ h: 45 }, 'malformed'], [{ h: [45] }, 'malformed'], [{ h: [0, 45, 0] }, 'malformed'], [{ h: 'x' }, 'malformed'], [{ h: null }, 'malformed'],
+      [{ h: [0, -1] }, 'bad-value'], [{ h: [0, 301] }, 'bad-value'], [{ h: [0, 4.5] }, 'bad-value'], [{ h: [0, '45'] }, 'bad-value'], [{ h: [0, null] }, 'bad-value'],
+      [{ s: ['e', 'b'] }, 'malformed'], [{ s: 'e' }, 'malformed'], [{ s: 'ebb' }, 'malformed'], [{ s: 'ex' }, 'malformed'], [{ s: 'EB' }, 'malformed'], [{ s: 3 }, 'malformed'],
+      [{ f: 3 }, 'malformed'], [{ f: [3] }, 'malformed'], [{ f: [3, 'm'] }, 'malformed'], [{ f: [3, 'w', 1] }, 'malformed'], [{ f: { times: 3 } }, 'malformed'],
+      [{ f: [0, 'w'] }, 'bad-value'], [{ f: [15, 'd'] }, 'bad-value'], [{ f: [2.5, 'd'] }, 'bad-value'], [{ f: ['3', 'w'] }, 'bad-value'],
+    ];
+    for (const [extra, error] of cases) {
+      let r;
+      expect(() => { r = fromCompact({ ...ok, ...extra }); }, JSON.stringify(extra)).not.toThrow();
+      expect(r, JSON.stringify(extra)).toEqual({ ok: false, error });
+    }
+  });
+
+  it('takes any exercise of the guide, and still refuses what is not one', () => {
+    for (const k of ['plank', 'side_plank', 'running', 'childs_pose', 'machine_seated_back_extension', 'squat', 'dead_bug']) expect(knownExercise(k), k).toBe(true);
+    for (const k of ['lunge', 'chair_stand_test', 'no_such_lift', '__proto__', 'constructor', '', 'Plank', null]) expect(knownExercise(k), String(k)).toBe(false);
+    expect(['plank', 'side_plank', 'running', 'childs_pose'].every(guideOnly)).toBe(true);
+    expect(['squat', 'dead_bug', 'machine_seated_back_extension', 'lunge', 'no_such_lift'].some(guideOnly)).toBe(false);
+    expect(catalogue.every(e => knownExercise(e.key))).toBe(true);
+    // 119 of the guide's 309 have never been counted (14 October 2026); 130 of 347 with batch 1, 145 of 384 with batch 2 (18 November 2026), and
+    // the variants of a guide-only base (crunch--machine) are guide only too.
+    expect(catalogue.filter(e => !e.key.includes('--') && guideOnly(e.key))).toHaveLength(145);
+    for (const e of catalogue.filter(x => x.key.includes('--'))) expect(guideOnly(e.key), e.key).toBe(guideOnly(e.key.split('--')[0]));
+    // Filmed: an exercise the app counts, set in reps.
+    expect([{ key: 'squat' }, { key: 'squat', holdSec: 30 }, { key: 'plank' }, { key: 'dead_bug' }].map(filmable)).toEqual([true, false, false, false]);
+    // The programme keeps them all.
+    expect(programmeOf({ title: 'A', who: '', note: '', items: sheet.items }).items.map(i => i.key)).toEqual(['squat', 'plank', 'dead_bug', 'childs_pose']);
+  });
+
+  it('leaves holds and the guide’s own exercises out of the day’s count', () => {
+    const id = programmeId(sheet), now = new Date(2026, 9, 14, 18, 0);
+    const sets = [0, 1, 2].map(m => ({ exercise: 'squat', reps: 10, createdAt: new Date(2026, 9, 14, 17, m).getTime(), planned: plannedOf(id, 0, sheet.items[0]) }));
+    const p = progressOf(sheet, id, sets, now);
+    expect(p.items.map(i => i.counted)).toEqual([true, false, false, false]);
+    expect([p.complete, p.total]).toEqual([1, 1]);
+    // A counted exercise set as a hold is not filmed either.
+    const held = { ...sheet, items: [{ ...sheet.items[0], holdSec: 30 }] };
+    expect(progressOf(held, programmeId(held), [], now).total).toBe(0);
+  });
+
+  it('sends the holds back to the coach, and sums only the sets the client films', async () => {
+    const now = new Date(2026, 9, 14, 18, 0);
+    const r = resultsOf(sheet, progressOf(sheet, 'p1', [], now), now);
+    expect(r.items.map(i => i.holdSec)).toEqual([undefined, 45, undefined, 60]);
+    for (const payload of [plainResultsPayload(r), await encodeResults(r)]) expect(await decodeResults(payload)).toEqual({ ok: true, results: r });
+    // No hold, no g: the results link of a programme without one is written as before, version 1. With a hold, version
+    // 2: a coach's app of before the sheet refuses it rather than show the hold as reps missed.
+    const rawOf = x => JSON.parse(new TextDecoder().decode(fromBase64url(plainResultsPayload(x).slice(1))));
+    const before = resultsOf(sample, progressOf(sample, 'p1', [], now), now);
+    expect(rawOf(before)).not.toHaveProperty('g');
+    expect([rawOf(before).v, rawOf(r).v]).toEqual([1, SHEET_VERSION]);
+    const forged = x => decodeResults('j' + b64(JSON.stringify(x)));
+    const ok = { v: 1, t: 'Séance', d: '2026-10-14', x: [['squat', 3, 10, [10]], ['plank', 3, 10, []]] };
+    for (const v of [1, 2]) expect(await forged({ ...ok, v, g: [0, 45] }), String(v)).toEqual({ ok: true, results: { title: 'Séance', who: '', day: '2026-10-14', time: '', items: [
+      { key: 'squat', sets: 3, reps: 10, done: [10] }, { key: 'plank', sets: 3, reps: 10, done: [], holdSec: 45 }] } });
+    expect(await forged({ ...ok, v: 3, g: [0, 45] })).toEqual({ ok: false, error: 'malformed' });
+    for (const [g, error] of [[45, 'malformed'], [[45], 'malformed'], [[0, 301], 'bad-value'], [[0, -1], 'bad-value'], [[0, 1.5], 'bad-value']]) {
+      expect(await forged({ ...ok, g }), JSON.stringify(g)).toEqual({ ok: false, error });
+    }
+    // The coach's header: the squat's three sets; the hold, the guide's own exercise and the squat set as a hold add
+    // none; the withdrawn dead bug keeps its place, as before.
+    expect(resultsSummary({ items: [
+      { key: 'squat', sets: 3, reps: 10, done: [10, 8, 10, 10] },
+      { key: 'plank', sets: 3, reps: 10, holdSec: 45, done: [] },
+      { key: 'childs_pose', sets: 1, reps: 1, done: [] },
+      { key: 'squat', sets: 2, reps: 10, holdSec: 30, done: [] },
+      { key: 'dead_bug', sets: 3, reps: 10, done: [10] },
+    ] })).toEqual({ planned: 6, done: 4, met: 3 });
+  });
+
+  it('starts the guide’s holds as a hold of 30 s, and every other exercise as before', () => {
+    expect(newItem('plank')).toEqual({ key: 'plank', sets: 3, reps: 10, rest: 90, note: '', holdSec: 30 });
+    expect(newItem('squat')).toEqual({ key: 'squat', sets: 3, reps: 10, rest: 90, note: '' });
+    const keys = new Set(catalogue.map(e => e.key));
+    expect(HOLD_START.size).toBe(12);
+    expect([...HOLD_START].filter(k => !keys.has(k))).toEqual([]);
+    // None of them is counted by the app (14 October 2026): each is done without filming.
+    expect([...HOLD_START].filter(programmable)).toEqual([]);
+  });
+
+  it('rebuilds a draft from results with their holds; a hold sent in reps stays in reps', () => {
+    vi.stubGlobal('localStorage', memory());
+    try {
+      const results = { title: 'Fiche', who: '', day: '2026-10-14', time: '', items: [
+        { key: 'plank', sets: 3, reps: 10, holdSec: 45, done: [] }, { key: 'side_plank', sets: 2, reps: 8, done: [] }, { key: 'squat', sets: 3, reps: 10, done: [] }] };
+      expect(draftFromResults(results).draft.items).toEqual([
+        { key: 'plank', sets: 3, reps: 10, rest: 90, note: '', holdSec: 45 },
+        { key: 'side_plank', sets: 2, reps: 8, rest: 90, note: '' },
+        { key: 'squat', sets: 3, reps: 10, rest: 90, note: '' },
+      ]);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('says a hold, a side and a frequency as a coach does, and the usual target as before', () => {
+    for (const lang of ['fr', 'en']) {
+      const c = PRO[lang];
+      for (const [s, r, rest] of [[3, 10, 90], [4, 12, 0], [1, 1, 45], [10, 100, 600]]) {
+        expect(c.targetLine(s, r, rest, 0, 'both')).toBe(c.target(s, r, rest));
+        expect(c.targetLine(s, r, rest)).toBe(c.target(s, r, rest));
+      }
+    }
+    expect(PRO.fr.holdTarget(3, 45)).toBe(`3${NBSP}×${NBSP}45${NBSP}s`);
+    expect(PRO.fr.holdTarget(3, 90)).toBe(`3${NBSP}×${NBSP}1${NBSP}min${NBSP}30`);
+    expect(PRO.en.holdTarget(3, 90)).toBe(`3${NBSP}×${NBSP}1${NBSP}min${NBSP}30${NBSP}s`);
+    expect(PRO.fr.targetLine(3, 10, 60, 45, 'each')).toBe(`3${NBSP}×${NBSP}45${NBSP}s de maintien · chaque côté · récup. 1${NBSP}min`);
+    expect(PRO.en.targetLine(3, 10, 60, 45, 'each')).toBe(`3${NBSP}×${NBSP}45${NBSP}s hold · each side · rest 1${NBSP}min`);
+    expect(PRO.fr.targetLine(3, 10, 90, 0, 'left')).toBe(`3${NBSP}×${NBSP}10 · côté gauche · récup. 1${NBSP}min${NBSP}30`);
+    expect([PRO.fr.frequency(3, 'week'), PRO.fr.frequency(1, 'day')]).toEqual([`3${NBSP}fois par semaine`, `1${NBSP}fois par jour`]);
+    expect([PRO.en.frequency(1, 'day'), PRO.en.frequency(2, 'week'), PRO.en.frequency(3, 'week')]).toEqual(['Once a day', 'Twice a week', '3 times a week']);
+    // On the PDF, a no-break space before each dot (a wrapped line never starts with one) and after "récup.".
+    const dot = `${NBSP}· `;
+    expect(PRO.fr.pdfDetails(45, 45, 'each', false)).toBe(`Maintien${dot}récup.${NBSP}45${NBSP}s${dot}chaque côté${dot}sans filmer`);
+    expect(PRO.fr.pdfDetails(90, 0, 'each', true)).toBe(`Récup.${NBSP}1${NBSP}min${NBSP}30${dot}chaque côté`);
+    expect(PRO.fr.pdfDetails(0, 0, 'both', false)).toBe(`Sans récup.${dot}sans filmer`);
+    expect(PRO.en.pdfDetails(45, 45, 'each', false)).toBe(`Hold${dot}rest${NBSP}45${NBSP}s${dot}each side${dot}without filming`);
+    // The drawings' credit: the line the task set, then the creator of any artwork a printed frame adapts, and that the
+    // drawings were changed for print (CC BY-SA 4.0, section 3(a)(1)).
+    expect(PRO.fr.pdfCredit()).toBe(`Dessins${NBSP}: Bryl Lim, workout-guide, CC BY-SA 4.0. Adaptés pour l’impression.`);
+    expect(PRO.fr.pdfCredit(['Everkinetic'])).toBe(`Dessins${NBSP}: Bryl Lim, workout-guide, CC BY-SA 4.0. Certains d’après Everkinetic, tous adaptés pour l’impression.`);
+    expect(PRO.en.pdfCredit()).toBe('Drawings: Bryl Lim, workout-guide, CC BY-SA 4.0. Adapted for print.');
+    expect(PRO.en.pdfCredit(['Everkinetic'])).toBe('Drawings: Bryl Lim, workout-guide, CC BY-SA 4.0. Some after Everkinetic, all adapted for print.');
+    // David's file holds every sample written out: no NaN, no undefined, no em dash.
+    for (const lang of ['fr', 'en']) for (const s of allStrings(lang)) expect(s, s).not.toMatch(/NaN|undefined|\u2014/);
+  });
+});
+
+// The exercise sheet's PDF (14 October 2026): each exercise with the guide's drawings, made ready before the tap and
+// handed in (sheet-drawings.js); here an 8 × 8 JPEG of the same form stands in for every frame.
+describe('the exercise sheet’s PDF', () => {
+  async function drawn(run) {
+    const texts = [];
+    const hook = ['preProcessText', ({ text }) => { texts.push(Array.isArray(text) ? text.join('') : text); }];
+    jsPDF.API.events.push(hook);
+    let blob;
+    try { blob = run(); } finally { jsPDF.API.events.splice(jsPDF.API.events.indexOf(hook), 1); }
+    const file = Buffer.from(await blob.arrayBuffer()).toString('latin1');
+    return { text: texts.join(''), flat: texts.join('').replace(/\s/g, ''), pages: file.match(/\/Type \/Page\b/g).length, images: (file.match(/\/Subtype \/Image\b/g) || []).length, blob };
+  }
+  const date = new Date(2026, 9, 14);
+  // Each frame with its source as the guide's manifest gives it: the squat's first pose adapts Everkinetic's artwork.
+  const frame = (slug, n) => ({ data: DRAWING_8PX, format: 'JPEG', alias: `g-${slug}-${n}`, source: frameSource(`/guide/${slug.replace(/_/g, '-')}/frame-${n}.webp`) });
+  const art = (slug, similar = false) => ({ start: frame(slug, 1), end: frame(slug, 3), similar });
+  const sheet = {
+    title: 'Dos et gainage', who: 'Camille', note: '', frequency: { times: 3, per: 'week' },
+    items: [
+      { key: 'squat', sets: 3, reps: 10, rest: 90, note: 'Descendre lentement', side: 'each' },
+      { key: 'plank', sets: 3, reps: 10, rest: 45, note: 'Dos plat', holdSec: 45 },
+      { key: 'machine_seated_back_extension', sets: 3, reps: 12, rest: 60, note: '' },
+    ],
+  };
+  const drawings = new Map([['squat', art('squat')], ['plank', art('plank')], ['machine_seated_back_extension', null]]);
+
+  it('prints a hold, a side, the frequency and a missing drawing, with the drawings’ credit', async () => {
+    const { flat, images, text } = await drawn(() => programmePdf(sheet, { lang: 'fr', date, drawings }));
+    for (const s of ['3×45s', 'Maintien·récup.45s·sansfilmer', 'chaquecôté', 'Récup.1min30·chaquecôté', 'sansfilmer', 'FRÉQUENCE', '3foisparsemaine',
+      'Extensionlombaireassiseàlamachine', 'Dessins:BrylLim,workout-guide,CCBY-SA4.0.Certainsd’aprèsEverkinetic,tousadaptéspourl’impression.', 'saufmention«sansfilmer»']) expect(flat, s).toContain(s);
+    // The squat's and the plank's two frames; the back extension has none.
+    expect(images).toBe(4);
+    expect(text).not.toMatch(/Workout ?Vision/i);
+    const en = await drawn(() => programmePdf(sheet, { lang: 'en', date, drawings }));
+    for (const s of ['3×45s', 'eachside', 'withoutfilming', 'FREQUENCY', '3timesaweek', 'Drawings:BrylLim,workout-guide,CCBY-SA4.0.SomeafterEverkinetic,alladaptedforprint.']) expect(en.flat, s).toContain(s);
+  });
+
+  it('credits Everkinetic only when a printed frame adapts its artwork', async () => {
+    const credit = (items, d) => programmeSheet({ ...sheet, items }, { lang: 'fr', date, drawings: d }).credit;
+    // The plank's frames are Bryl Lim's own; the squat's first pose is after Everkinetic.
+    expect([frame('plank', 1).source, frame('plank', 3).source, frame('squat', 1).source, frame('squat', 3).source]).toEqual([null, null, 'Everkinetic', null]);
+    expect(credit([sheet.items[1]], drawings)).toBe(PRO.fr.pdfCredit([]));
+    expect(credit(sheet.items, drawings)).toBe(PRO.fr.pdfCredit(['Everkinetic']));
+    // The squat's first pose not printed (it did not load): nothing of Everkinetic's on the sheet.
+    expect(credit([sheet.items[0]], new Map([['squat', { start: null, end: frame('squat', 3), similar: false }]]))).toBe(PRO.fr.pdfCredit([]));
+    // A borrowed drawing is credited as the drawing it is: the wall ball shows the squat's.
+    expect(credit([{ key: 'wall_ball', sets: 3, reps: 15, rest: 60, note: '' }], new Map([['wall_ball', art('squat', true)]]))).toBe(PRO.fr.pdfCredit(['Everkinetic']));
+    const r = await drawn(() => programmePdf({ ...sheet, items: [sheet.items[1]] }, { lang: 'fr', date, drawings }));
+    expect(r.flat).toContain('Dessins:BrylLim,workout-guide,CCBY-SA4.0.Adaptéspourl’impression.');
+    expect(r.flat).not.toContain('Everkinetic');
+  });
+
+  it('embeds an exercise’s two frames once, however often it comes', async () => {
+    const twice = { ...sheet, items: [sheet.items[0], sheet.items[1], { ...sheet.items[0], reps: 12 }] };
+    expect((await drawn(() => programmePdf(twice, { lang: 'fr', date, drawings }))).images).toBe(4);
+    // A frame alone goes in the first place, and is embedded alone.
+    const one = new Map([['squat', { start: null, end: frame('squat', 3), similar: false }]]);
+    expect((await drawn(() => programmePdf({ ...sheet, items: [sheet.items[0]] }, { lang: 'fr', date, drawings: one }))).images).toBe(1);
+  });
+
+  it('prints no drawing and no credit when none was made, and never fails for it', async () => {
+    const none = new Map([['squat', { start: null, end: null, similar: false }], ['plank', null]]);
+    for (const d of [none, new Map(), undefined]) {
+      const r = await drawn(() => programmePdf(sheet, { lang: 'fr', date, drawings: d }));
+      expect(r.images).toBe(0);
+      expect(r.flat).not.toContain('BrylLim');
+      expect(r.flat).toContain('3×45s');
+    }
+  });
+
+  it('says a borrowed drawing shows a similar movement', async () => {
+    const p = { ...sheet, items: [{ key: 'wall_ball', sets: 3, reps: 15, rest: 60, note: '' }] };
+    const r = await drawn(() => programmePdf(p, { lang: 'fr', date, drawings: new Map([['wall_ball', art('squat', true)]]) }));
+    expect(r.flat).toContain('Dessind’unmouvementproche');
+    expect((await drawn(() => programmePdf(p, { lang: 'fr', date, drawings }))).flat).not.toContain('mouvementproche');
+  });
+
+  it('asks to film every set, every set but those marked, or nothing, as the exercises are filmed', () => {
+    const footOf = items => programmeSheet({ ...sheet, items }, { lang: 'fr', date }).foot;
+    expect(footOf([sheet.items[0]])).toBe(PRO.fr.pdfFoot);
+    expect(footOf(sheet.items)).toBe(PRO.fr.pdfFootSome);
+    expect(footOf([sheet.items[1], { key: 'childs_pose', sets: 1, reps: 1, rest: 0, note: '' }])).toBe('');
+    const rows = programmeSheet(sheet, { lang: 'fr', date, drawings }).rows;
+    expect(rows.map(r => [r.filmed, r.hold, r.side, !!r.drawing])).toEqual([[true, 0, 'each', true], [false, 45, 'both', true], [true, 0, 'both', false]]);
+    expect(programmeSheet(sheet, { lang: 'fr', date }).people).toEqual([['Pour', 'Camille'], ['Exercices', '3'], ['Fréquence', `3${NBSP}fois par semaine`]]);
+  });
+
+  it('keeps 24 exercises with their drawings to six pages, seven with cues, a note and a large code', async () => {
+    const keys = catalogue.filter(e => !e.noDrawing && !e.drawing && knownExercise(e.key)).slice(0, LIMITS.items).map(e => e.key);
+    const all = new Map(keys.map(k => [k, art(k)]));
+    const linkOf = p => `https://david-dabert.github.io/workout-vision/#programme=${packNow(p)}`;
+    // 24 exercises, their code at the top (version 13 measured).
+    const bare = { ...sheet, items: keys.map(key => ({ key, sets: 3, reps: 10, rest: 60, note: '' })) };
+    const plain = await drawn(() => programmePdf(bare, { lang: 'fr', date, drawings: all, link: linkOf(bare) }));
+    expect(plain.images).toBe(48);
+    expect(plain.pages).toBeLessThanOrEqual(6);
+    expect(plain.flat).toContain('Dessins:BrylLim');
+    // A two-line cue on every other exercise and a general note: the code passes version 15 and goes to the end.
+    const long = { ...bare, note: 'Échauffement 10 min.', items: bare.items.map((i, k) => ({ ...i, note: k % 2 ? 'Une consigne assez longue pour tenir sur deux lignes du bloc' : '' })) };
+    expect(programmeQr(linkOf(long)).top).toBe(false);
+    const cued = await drawn(() => programmePdf(long, { lang: 'fr', date, drawings: all, link: linkOf(long) }));
+    expect(cued.pages).toBeLessThanOrEqual(7);
+    expect(cued.flat).toContain('OUVRIRLEPROGRAMME');
+  });
+});

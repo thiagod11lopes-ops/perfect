@@ -1,0 +1,33 @@
+.reel {
+  background:
+    linear-gradient(180deg, #ff8a1a 0%, #f07000 45%, #c45700 100%);
+  border-radius: 0.55rem;
+  overflow: hidden;
+  height: calc($symbol-size-small * $rows-number);
+  position: relative;
+  min-width: $symbol-size-small;
+  box-shadow:
+    0 0.2rem 0.45rem rgba(0, 0, 0, 0.45),
+    inset 0 0.1rem 0.25rem rgba(255, 210, 120, 0.35),
+    inset 0 -0.12rem 0.2rem rgba(120, 50, 0, 0.45);
+  border: 0.08rem solid rgba(255, 180, 80, 0.55);
+
+  // Faixa de vidro sutil no topo da janela
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 28%;
+    background: linear-gradient(180deg, rgba(255, 230, 180, 0.28), transparent);
+    pointer-events: none;
+    z-index: 2;
+  }
+}
+
+@media only screen and (min-width: $xs) {
+  .reel {
+    height: calc($symbol-size * $rows-number);
+    min-width: $symbol-size;
+    border-radius: 0.65rem;
+  }
+}

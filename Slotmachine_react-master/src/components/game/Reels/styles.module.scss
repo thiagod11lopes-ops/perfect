@@ -1,0 +1,84 @@
+@mixin reels-width($symbol-size) {
+  width: calc($reels-number * $symbol-size + $reels-padding * 2 + $reels-gap * ($reels-number - 1));
+}
+
+@mixin animation-bonus($animationName, $reels-height) {
+  @keyframes #{$animationName} {
+    0% {
+      transform: translate(-50%, calc($reels-height / 2)) scale(0);
+    }
+    20% {
+      transform: translate(-50%, calc($reels-height / 2)) scale(2);
+    }
+    50% {
+      transform: translate(-50%, calc($reels-height / 2)) scale(2);
+    }
+    100% {
+      transform: translate(-50%, -100%) scale(0);
+    }
+  }
+}
+
+$reels-height: calc($rows-number * $symbol-size-small + $reels-padding * 2);
+@include animation-bonus(bonus-small, $reels-height);
+
+.reels {
+  @include reels-width($symbol-size-small);
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat($reels-number, 1fr);
+  column-gap: $reels-gap;
+  padding: 0.55rem;
+  height: $reels-height;
+  border-radius: 0.65rem;
+  background:
+    linear-gradient(180deg, #2a2110 0%, #1a1408 100%);
+  box-shadow:
+    inset 0 0.2rem 0.55rem rgba(0, 0, 0, 0.65),
+    inset 0 -0.08rem 0 rgba(255, 220, 120, 0.2);
+  border: 0.1rem solid rgba(120, 80, 10, 0.55);
+
+  &__bonus {
+    font-size: calc($font-huge * 0.75);
+    font-family: $font-title;
+    color: $color-orange;
+    animation: bonus-small 1s 0.2s ease-in-out forwards;
+    -webkit-animation: bonus 1s 0.2s ease-in-out forwards;
+    position: absolute;
+    transform: translate(-50%, calc($reels-height / 2)) scale(0);
+    left: 50%;
+    transform-origin: center;
+    user-select: none;
+    text-shadow: 2px 2px 2px rgba(0, 0, 0, 1);
+    z-index: 5;
+  }
+
+  @keyframes bonus {
+    0% {
+      transform: translate(-50%, calc($reels-height / 2)) scale(0);
+    }
+    20% {
+      transform: translate(-50%, calc($reels-height / 2)) scale(2);
+    }
+    50% {
+      transform: translate(-50%, calc($reels-height / 2)) scale(2);
+    }
+    100% {
+      transform: translate(-50%, -100%) scale(0);
+    }
+  }
+}
+
+@media only screen and (min-width: $xs) {
+  $reels-height: calc($rows-number * $symbol-size + $reels-padding * 2);
+  @include animation-bonus(bonus, $reels-height);
+  .reels {
+    @include reels-width($symbol-size);
+    height: $reels-height;
+    padding: 0.7rem;
+
+    &__bonus {
+      font-size: $font-huge;
+    }
+  }
+}

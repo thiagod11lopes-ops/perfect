@@ -1,0 +1,576 @@
+import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
+import { useT } from '../../lib/LanguageContext';
+import { PRO } from './pro-copy';
+import { exerciseName, guideExercise } from './exercise-info';
+import { Thumb } from './Guide';
+import {
+  LIMITS, MAX_PAYLOAD, SIDES, encodeProgramme, plainPayload, programmeLink, programmeOf, fixItem, fixHold, fixTimes, programmable,
+  filmable, guideOnly, holdOf, sideOf, withKind, withSide,
+} from './programme';
+import { MAX_DRAFTS, isEmptyDraft, loadDrafts, saveDraft, removeDraft, newDraft, newItem, createFromTemplate } from './programme-store';
+import { useCondensingTopbar } from './topbar';
+import { coachCompareShown, showUnmeasuredRoutes } from '../../lib/buildFlags';
+import { lazyScreen } from '../../lib/lazyScreen';
+// The form's fields are the report's (Report.css: .field), so the two forms read alike.
+import './Report.css';
+import './Pro.css';
+
+const ExerciseList = lazy(() => import('./ExerciseList'));
+// Card 049: imported only in the extended build, where the coach's office is offered (scripts/check-ship-less.mjs).
+const CoachSuite = import.meta.env.VITE_EXTENDED_ROUTES === '1' ? lazy(() => import('../coaches/CoachSuite')) : null;
+const Programme = lazyScreen(() => import('./Programme.jsx'));
+const ReferenceCompare = lazyScreen(() => import('../reference/ReferenceCompare.jsx'));
+
+// The programme's PDF (jsPDF and the app's fonts) loads apart, once, as the report's does (Report.jsx), and is warmed
+// as soon as a programme is open, so the share happens within the tap.
+let kit = null, loading = null;
+function warmProgrammePdf() {
+  loading ||= import('./programme-pdf').then(m => (kit = m), e => { loading = null; throw e; });
+  return loading;
+}
+
+// The link that carries a payload, or 'too-long' when a link cannot carry it.
+const linkOf = payload => (payload.length <= MAX_PAYLOAD ? programmeLink(location.href, payload) : 'too-long');
+
+const SvgClipboard = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ verticalAlign: 'middle', marginRight: '6px' }}><rect x="4" y="4" width="16" height="16" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg>;
+const SvgBriefcase = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ verticalAlign: 'middle', marginRight: '6px' }}><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>;
+
+// One share sheet per tap: a second tap within this time of the first is let go. A lock held until the share settles
+// left both share buttons dead for good when a share never settled. Status: convention, UNSOURCED.
+const SHARE_GAP_MS = 1000;
+
+const BackIcon = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>;
+const Arrow = () => <svg className="row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></svg>;
+
+/**
+ * Espace pro (6 October 2026): a coach, or a physiotherapist, builds a programme for a client and sends it as a PDF or
+ * as a link that opens it in the client's app. Nothing leaves the phone but through the share sheet or the clipboard,
+ * on the coach's tap; the drafts stay in this phone's storage (programme-store.js).
+ */
+/**
+ * Espace pro: the coach's drafts, and the editor of one. start: { draft, kept }, a draft to open at once (the one a
+ * client's results lead to, programme-store.js, draftFromResults).
+ */
+export default function Pro({ onClose, start = null }) {
+  const { lang } = useT(), fr = lang === 'fr', c = PRO[fr ? 'fr' : 'en'];
+  const [drafts, setDrafts] = useState(() => {
+    const list = loadDrafts();
+    return start && !list.some(d => d.id === start.draft.id) ? [start.draft, ...list] : list;
+  });
+  const [openId, setOpenId] = useState(start?.draft.id ?? null);
+  // A draft made from a client's results has no cue and default rests: its editor opens saying so (live-app audit,
+  // 10 October 2026).
+  const rebuiltId = start?.rebuilt ? start.draft.id : null;
+  const [picking, setPicking] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  // The "Pour" field takes focus in a copy made for another client.
+  const [focusWho, setFocusWho] = useState(false);
+  const open = drafts.find(d => d.id === openId) || null;
+
+  // A change is kept at once; a phone that refuses to keep it, or holds MAX_DRAFTS already, is told on the screen.
+  // A draft is kept only once it holds something: "Nouveau programme", then Back, leaves no empty row and takes no
+  // place (excellence hunt, 9 October 2026).
+  const [kept, setKept] = useState(start ? start.kept : true);
+  const [proTab, setProTab] = useState('programmes'); // 'programmes' | 'business'
+  const [comparing, setComparing] = useState(false);
+  // The programme the strengthening tab's "Ajouter au programme" opened in this visit (handleAddPhysio).
+  const physioDraftId = useRef(null);
+  const update = draft => {
+    const next = { ...draft, updatedAt: Date.now() };
+    setDrafts(list => [next, ...list.filter(d => d.id !== next.id)]);
+    if (isEmptyDraft(next)) { removeDraft(next.id); setKept(true); return; }
+    setKept(saveDraft(next));
+  };
+  // A draft opened says whether it is kept (a copy refused as 'full' says so again); the list asks nothing.
+  const show = id => {
+    setPreviewing(false); setFocusWho(false); setOpenId(id);
+    const d = drafts.find(x => x.id === id);
+    if (d && !isEmptyDraft(d)) setKept(saveDraft(d));
+  };
+  const create = () => { const d = newDraft(); setDrafts(list => [d, ...list]); setKept(true); setPreviewing(false); setFocusWho(false); setOpenId(d.id); };
+  const createTemplate = templateId => {
+    const d = createFromTemplate(templateId);
+    if (!d) return;
+    setDrafts(list => [d, ...list]);
+    setKept(saveDraft(d));
+    setPreviewing(false);
+    setFocusWho(false);
+    setOpenId(d.id);
+  };
+  // A deletion makes room: a draft the phone refused for want of it ('full') is kept now, as the message promised.
+  const remove = id => {
+    removeDraft(id);
+    const stored = new Set(loadDrafts().map(d => d.id)), left = drafts.filter(d => d.id !== id);
+    for (const d of left) if (!stored.has(d.id) && !isEmptyDraft(d)) saveDraft(d);
+    setDrafts(left); setPreviewing(false); setFocusWho(false); setOpenId(null); setKept(true);
+  };
+  const back = () => { setPreviewing(false); return open && isEmptyDraft(open) ? remove(open.id) : (setFocusWho(false), setOpenId(null)); };
+  // The same programme for another client: title, exercises, cues and note, "Pour" left empty.
+  const duplicate = () => { const d = { ...open, id: newDraft().id, who: '' }; update(d); setOpenId(d.id); setFocusWho(true); };
+
+  if (open && picking) return <Picker c={c} onBack={() => setPicking(false)} onChoose={key => {
+    if (open.items.length < LIMITS.items) update({ ...open, items: [...open.items, newItem(key)] });
+    setPicking(false);
+  }} />;
+  const openPreview = open && previewing ? programmeOf(open) : null;
+  if (openPreview) return <Suspense fallback={<div className="wv-experience" aria-busy="true"><section className="screen is-active pro-screen programme-screen"><div className="wrap"><div className="topbar"><button className="icon-btn press" onClick={() => setPreviewing(false)} aria-label={c.back}><BackIcon /></button><span className="pill">{c.previewPill}</span></div><p className="pro-status" role="status">{c.previewBusy}</p></div></section></div>}>
+    <Programme preview={openPreview} onClose={() => setPreviewing(false)} />
+  </Suspense>;
+  // "Ajouter au programme" from the strengthening tab (CoachSuite.jsx): the exercise joins the programme it opened
+  // earlier in this visit while it is still there and has room, rather than a new programme at every tap (PHY-1).
+  // Title: French awaiting David's approval (R10).
+  const handleAddPhysio = (key) => {
+    const physio = drafts.find(x => x.id === physioDraftId.current);
+    if (physio && physio.items.length < LIMITS.items) {
+      const d = physio.items.some(it => it.key === key) ? physio : { ...physio, items: [...physio.items, newItem(key)] };
+      update(d);
+      setOpenId(d.id);
+      return;
+    }
+    const d = newDraft();
+    d.title = fr ? 'Renforcement par zone' : 'Strengthening by area';
+    d.items = [newItem(key)];
+    physioDraftId.current = d.id;
+    setDrafts(list => [d, ...list]);
+    setKept(saveDraft(d));
+    setOpenId(d.id);
+  };
+
+  if (comparing) return <ReferenceCompare audience="coach" onClose={() => setComparing(false)} />;
+  if (open) return <Editor key={open.id} c={c} fr={fr} lang={lang} draft={open} kept={kept} rebuilt={open.id === rebuiltId} focusWho={focusWho} onChange={update} onPick={() => { setFocusWho(false); setPicking(true); }} onPreview={() => setPreviewing(true)} onBack={back} onDuplicate={duplicate} onDelete={() => remove(open.id)} />;
+  return <List c={c} fr={fr} drafts={drafts.filter(d => !isEmptyDraft(d))} onClose={onClose} onCreate={create} onTemplate={createTemplate} onOpen={show} proTab={proTab} onSetProTab={setProTab} onAddPhysio={handleAddPhysio} onCompare={() => setComparing(true)} />;
+}
+
+function List({ c, fr, drafts, onClose, onCreate, onTemplate, onOpen, proTab, onSetProTab, onAddPhysio, onCompare }) {
+  const screenRef = useRef(null);
+  useCondensingTopbar(screenRef, [fr, proTab]);
+  return <div className="wv-experience">
+    <section ref={screenRef} className="screen is-active pro-screen" data-testid="pro-screen"><div className="wrap">
+      <div className="topbar">
+        <button className="icon-btn press" onClick={onClose} aria-label={c.back}><BackIcon /></button>
+        <span className="pill">{fr ? 'Version de test' : 'Test version'}</span>
+      </div>
+      <p className="eyebrow pro-eyebrow" data-reveal style={{ '--i': 0 }}>{c.eyebrow}</p>
+      <h1 className="title" data-reveal style={{ '--i': 0 }}>{proTab === 'business' && showUnmeasuredRoutes() ? c.officeTitle : c.title}</h1>
+      <p className="sub pro-sub" data-reveal style={{ '--i': 1 }}>{proTab === 'business' && showUnmeasuredRoutes() ? c.officeSub : c.sub}</p>
+
+      {/* The coach's office (clients, contracts, accounting, nutrition) only in the extended build: it widens the product
+          before the count it rests on is proven (docs/FLAWS-2026-11.md #7, R16). The programme builder stays. */}
+      {showUnmeasuredRoutes() && <div className="pro-mode-nav" data-reveal style={{ '--i': 1.5 }}>
+        <button
+          type="button"
+          className={`pro-mode-pill press ${proTab === 'programmes' ? 'is-active' : ''}`}
+          aria-pressed={proTab === 'programmes'}
+          onClick={() => onSetProTab('programmes')}
+          data-testid="tab-pro-programmes"
+        >
+          <SvgClipboard />{c.programmesTab}
+        </button>
+        <button
+          type="button"
+          className={`pro-mode-pill press ${proTab === 'business' ? 'is-active' : ''}`}
+          aria-pressed={proTab === 'business'}
+          onClick={() => onSetProTab('business')}
+          data-testid="tab-pro-business"
+        >
+          <SvgBriefcase />{c.officeTab}
+        </button>
+      </div>}
+
+      {proTab === 'business' && showUnmeasuredRoutes() ? (
+        <Suspense fallback={<div aria-busy="true" />}>
+          <CoachSuite onAddToProgramme={onAddPhysio} />
+        </Suspense>
+      ) : (
+        <>
+          <div className="actions" data-reveal style={{ '--i': 2 }}>
+            <button type="button" className="btn-primary press" onClick={onCreate} data-testid="pro-new">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+              <span>{c.newProgramme}</span>
+            </button>
+          </div>
+          {coachCompareShown() && <button type="button" className="pro-template-card press" onClick={onCompare} data-testid="pro-compare" data-reveal style={{ '--i': 2.2 }}>
+            <span className="row-txt"><b>{c.compareRow}</b><small>{c.compareRowSub}</small></span>
+            <Arrow />
+          </button>}
+          {/* Card 048: unsourced templates only in the extended build (showUnmeasuredRoutes()). In production,
+              the coach sees only the programmes they made. */}
+          {showUnmeasuredRoutes() && <div className="pro-templates" data-reveal style={{ '--i': 2.5 }}>
+            <h2 className="section-head">{c.templatesHead}</h2>
+            <p className="pro-templates-note" data-testid="pro-templates-note">{c.templatesNote}</p>
+            <div className="pro-template-grid">
+              <button type="button" className="pro-template-card press" onClick={() => onTemplate('posture')} data-testid="template-posture">
+                <span className="row-txt"><b>{c.templatePosture}</b><small>{c.templatePostureSub}</small></span>
+                <Arrow />
+              </button>
+              <button type="button" className="pro-template-card press" onClick={() => onTemplate('shoulder')} data-testid="template-shoulder">
+                <span className="row-txt"><b>{c.templateShoulder}</b><small>{c.templateShoulderSub}</small></span>
+                <Arrow />
+              </button>
+              <button type="button" className="pro-template-card press" onClick={() => onTemplate('conditioning')} data-testid="template-conditioning">
+                <span className="row-txt"><b>{c.templateConditioning}</b><small>{c.templateConditioningSub}</small></span>
+                <Arrow />
+              </button>
+            </div>
+          </div>}
+          {drafts.length > 0 && <div data-reveal style={{ '--i': 3 }}>
+            <h2 className="section-head">{c.draftsHead}</h2>
+            <ul className="pro-drafts">{drafts.map(d => <li key={d.id}>
+              <button type="button" className="pro-draft press" onClick={() => onOpen(d.id)}>
+                <span className="row-txt"><b>{d.title.trim() || c.untitled}</b><small>{[d.who.trim(), c.draftMeta(d.items.length)].filter(Boolean).join(' · ')}</small></span>
+                <Arrow />
+              </button>
+            </li>)}</ul>
+          </div>}
+          <p className="foot pro-foot" data-reveal style={{ '--i': 4 }}>{c.users} {c.privacy}</p>
+        </>
+      )}
+    </div></section>
+  </div>;
+}
+
+// A whole number typed in a field of its own; brought into bounds when the field is left (programme.js, fixItem).
+// bare: no label of its own (the frequency's, whose label names the pair), only its long label for a screen reader.
+function NumField({ id, label, longLabel, value, onCommit, bare = false }) {
+  // While the field is being typed in, its own text; otherwise the draft's number.
+  const [text, setText] = useState(null);
+  return <div className="pro-num">
+    {!bare && <label htmlFor={id} aria-label={longLabel}>{label}</label>}
+    <input id={id} type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off" enterKeyHint="done" maxLength={3}
+      aria-label={bare ? longLabel : undefined}
+      value={text ?? String(value)} onFocus={() => setText(String(value))} onChange={e => setText(e.target.value.replace(/[^0-9]/g, ''))}
+      onBlur={() => { if (text !== null) onCommit(text); setText(null); }}
+      onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+  </div>;
+}
+
+// A choice among a few, in the numbers' own box (Pro.css, .pro-select): a label above, the system's own list.
+function Choice({ id, label, value, options, onChange }) {
+  return <div className="pro-num">
+    <label htmlFor={id}>{label}</label>
+    <span className="pro-select">
+      <select id={id} value={value} onChange={e => onChange(e.target.value)}>
+        {options.map(([v, words]) => <option key={v} value={v}>{words}</option>)}
+      </select>
+    </span>
+  </div>;
+}
+
+function Editor({ c, fr, lang, draft, kept, rebuilt = false, focusWho = false, onChange, onPick, onPreview, onBack, onDuplicate, onDelete }) {
+  const screenRef = useRef(null), whoRef = useRef(null);
+  useEffect(() => { if (focusWho) whoRef.current?.focus({ preventScroll: false }); }, [focusWho]);
+  // The bar's small title follows the programme's title as it is typed.
+  useCondensingTopbar(screenRef, [fr, draft.title.trim()]);
+  const [note, setNote] = useState(rebuilt ? c.rebuiltNote : '');
+  const [status, setStatus] = useState(kit ? 'ready' : 'preparing');
+  // The packed link of the programme as it stands, once made: { of, link }.
+  const [packed, setPacked] = useState({ of: '', link: '' });
+  const [showLink, setShowLink] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState('');
+  const [previewShape, setPreviewShape] = useState(null);
+  const mountedRef = useRef(true), previewTicketRef = useRef(0), shapeRef = useRef('');
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+  const noteTimer = useRef(0), shareAt = useRef({ pdf: -Infinity, link: -Infinity });
+  const programme = programmeOf(draft), shape = programme ? JSON.stringify(programme) : '';
+  const previewBusy = Boolean(shape) && previewShape === shape;
+  useEffect(() => { previewTicketRef.current++; shapeRef.current = shape; }, [shape]);
+  // The link is the programme's as it stands, made in the render itself (the plain form), so the tap shares it at once
+  // (Safari shares only from the tap itself); the packed form, shorter, takes its place once made. 8 October 2026: on
+  // David's iPhone, a number typed, then "Share the link" said "The link could not be prepared": leaving the field
+  // changed the programme within the tap, and the link, made only by the packing, was not there yet.
+  const plain = useMemo(() => (shape ? linkOf(plainPayload(JSON.parse(shape))) : ''), [shape]);
+  const link = packed.of === shape ? packed.link : plain;
+  useEffect(() => {
+    if (!shape) return undefined;
+    let live = true;
+    encodeProgramme(JSON.parse(shape)).then(p => { if (live) setPacked({ of: shape, link: linkOf(p) }); }, () => {});
+    return () => { live = false; };
+  }, [shape]);
+  // Whether the same button's share began less than SHARE_GAP_MS ago; else the share about to begin is noted.
+  const tooSoon = what => {
+    const now = Date.now();
+    if (now - shareAt.current[what] < SHARE_GAP_MS) return true;
+    shareAt.current[what] = now;
+    return false;
+  };
+  useEffect(() => {
+    warmProgrammePdf().then(() => setStatus('ready'), () => setStatus('error'));
+    return () => clearTimeout(noteTimer.current);
+  }, []);
+  // The guide's drawings of the programme's exercises, made ready for the PDF before the tap (sheet-drawings.js): the
+  // PDF button says it is preparing until each has loaded, failed, or taken LOAD_TIMEOUT_MS.
+  const drawSig = useMemo(() => (shape ? [...new Set(JSON.parse(shape).items.map(i => i.key))].join(' ') : ''), [shape]);
+  const [drawnSig, setDrawnSig] = useState('');
+  useEffect(() => {
+    if (status !== 'ready' || !drawSig) return undefined;
+    let live = true;
+    kit.drawings.warm(drawSig.split(' ')).then(() => { if (live) setDrawnSig(drawSig); });
+    return () => { live = false; };
+  }, [drawSig, status]);
+  const drawn = !drawSig || drawnSig === drawSig || (!!kit && kit.drawings.ready(drawSig.split(' ')));
+  const busy = status === 'preparing' || (status === 'ready' && !drawn);
+
+  const say = (text, ms = 4000) => { clearTimeout(noteTimer.current); setNote(text); noteTimer.current = setTimeout(() => setNote(''), ms); };
+  const set = (field, value) => onChange({ ...draft, [field]: value });
+  const setItem = (i, patch) => onChange({ ...draft, items: draft.items.map((it, k) => (k === i ? { ...it, ...patch } : it)) });
+  const move = (i, d) => {
+    const items = [...draft.items], j = i + d;
+    if (j < 0 || j >= items.length) return;
+    [items[i], items[j]] = [items[j], items[i]];
+    onChange({ ...draft, items });
+  };
+  const drop = i => onChange({ ...draft, items: draft.items.filter((_, k) => k !== i) });
+  const name = key => exerciseName(key, lang);
+
+  function download(blob, fileName, warning = '') {
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), { href: url, download: fileName });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    if (warning) say(`${c.pdfDownloaded} ${warning}`, 12000);
+    else say(c.pdfDownloaded);
+  }
+  // Built and shared inside the tap, as the report's PDF (Report.jsx).
+  function sharePdf() {
+    if (!programme) return;
+    if (!kit) { setStatus('preparing'); warmProgrammePdf().then(() => setStatus('ready'), () => { setStatus('error'); say(c.pdfError); }); return; }
+    // The drawings still loading (an exercise just added): the button says so, and the tap waits for the next one.
+    if (!kit.drawings.ready(programme.items.map(i => i.key))) return;
+    let blob;
+    const date = new Date();
+    if (tooSoon('pdf')) return;
+    // The link goes on the PDF as a QR code (programme-pdf.js, programmeQr), packed now, within the tap (packNow): the
+    // programme as it stands, a number just typed included, and never the longer plain link.
+    let qr = null;
+    try {
+      const pdfLink = linkOf(kit.packNow(programme));
+      qr = pdfLink === 'too-long' ? null : kit.programmeQr(pdfLink);
+      blob = kit.programmePdf(programme, { lang, date, qr, drawings: kit.drawings.of(programme) });
+    } catch (e) { console.error('[programme pdf]', e); say(c.pdfError); return; }
+    // A sheet with no code says so: the client could not open the programme from the paper (excellence hunt, 9 October).
+    const warning = qr ? '' : c.pdfNoQr;
+    const fileName = kit.programmeFileName(programme, { lang, date });
+    const file = new File([blob], fileName, { type: 'application/pdf' });
+    if (navigator.canShare?.({ files: [file] })) {
+      // Said as the sheet opens (a line left from an earlier share goes), and again once the coach is back from it:
+      // the share sheet covers the page for longer than the line lasts.
+      say(warning, 12000);
+      const tell = () => { if (warning) say(warning, 12000); };
+      // Refused for any reason but the coach's own cancel (a share still open counts), the file is downloaded instead.
+      navigator.share({ files: [file], title: programme.title })
+        .then(tell, e => { if (e.name !== 'AbortError') download(blob, fileName, warning); else tell(); });
+      return;
+    }
+    download(blob, fileName, warning);
+  }
+  const linkReady = link && link !== 'too-long';
+  function copy() {
+    if (!linkReady) { say(link === 'too-long' ? c.tooLong : c.linkError); return; }
+    const done = () => { setShowLink(false); say(c.copied); };
+    const fail = () => { setShowLink(true); say(c.copyFailed); };
+    try {
+      if (navigator.clipboard) navigator.clipboard.writeText(link).then(done, fail);
+      else fail();
+    } catch { fail(); }
+  }
+  function shareLink() {
+    if (!linkReady) { say(link === 'too-long' ? c.tooLong : c.linkError); return; }
+    if (!navigator.share) { copy(); return; }
+    if (tooSoon('link')) return;
+    navigator.share({ title: programme.title, text: c.linkText(programme.title), url: link })
+      .catch(e => { if (e.name !== 'AbortError') copy(); });
+  }
+
+  async function openQr() {
+    if (!linkReady) { say(link === 'too-long' ? c.tooLong : c.linkError); return; }
+    try {
+      const QRCode = (await import('qrcode')).default;
+      const url = await QRCode.toDataURL(link, { width: 256, margin: 2 });
+      setQrDataUrl(url);
+      setShowQrModal(true);
+    } catch (e) {
+      console.error('[programme qr]', e);
+      say(c.linkError);
+    }
+  }
+
+  function openPreview() {
+    if (!programme) { say(c.needs); return; }
+    if (Programme.loaded()) { onPreview(); return; }
+    const ticket = ++previewTicketRef.current;
+    setPreviewShape(shape);
+    Programme.warm().then(() => {
+      if (!mountedRef.current || ticket !== previewTicketRef.current) return;
+      setPreviewShape(null);
+      if (Programme.loaded() && shapeRef.current) onPreview();
+      else if (!Programme.loaded()) say(c.previewError);
+    });
+  }
+
+  return <div className="wv-experience">
+    <section ref={screenRef} className="screen is-active pro-screen pro-edit" data-testid="pro-editor"><div className="wrap">
+      <div className="topbar">
+        <button className="icon-btn press" onClick={onBack} aria-label={c.back}><BackIcon /></button>
+        <span className="pill">{c.eyebrow}</span>
+      </div>
+      <h1 className="title" data-reveal style={{ '--i': 0 }}>{draft.title.trim() || c.editTitle}</h1>
+      {kept === false && <p className="pro-warn" role="alert">{c.storageOff}</p>}
+      {kept === 'full' && <p className="pro-warn" role="alert" data-testid="pro-full">{c.draftsFull(MAX_DRAFTS)}</p>}
+      <div className="field pro-first">
+        <label htmlFor="pTitle">{c.titleLabel}</label>
+        <input id="pTitle" type="text" autoComplete="off" autoCapitalize="sentences" enterKeyHint="next" maxLength={LIMITS.title}
+          placeholder={c.titlePlaceholder} value={draft.title} onChange={e => set('title', e.target.value)} />
+      </div>
+      <div className="field">
+        <label htmlFor="pWho">{c.whoLabel}</label>
+        <input ref={whoRef} id="pWho" type="text" autoComplete="off" autoCapitalize="words" autoCorrect="off" spellCheck={false} enterKeyHint="next" maxLength={LIMITS.who}
+          placeholder={c.whoPlaceholder} value={draft.who} onChange={e => set('who', e.target.value)} />
+      </div>
+      {/* How often (the exercise sheet, 14 October 2026): optional, none until a number is typed. */}
+      <div className="field pro-freq">
+        <label htmlFor="pFreq">{c.freqLabel}</label>
+        <div className="pro-freq-row">
+          <NumField bare id="pFreq" longLabel={c.freqTimesLong} value={draft.frequency?.times ?? ''}
+            onCommit={text => set('frequency', { times: fixTimes(text), per: draft.frequency?.per ?? 'week' })} />
+          <span className="pro-select">
+            <select id="pFreqPer" aria-label={c.freqPerLabel} value={draft.frequency?.per ?? 'week'}
+              onChange={e => set('frequency', { times: draft.frequency?.times ?? null, per: e.target.value })}>
+              <option value="day">{c.perOptions.day}</option>
+              <option value="week">{c.perOptions.week}</option>
+            </select>
+          </span>
+        </div>
+      </div>
+
+      <h2 className="section-head">{c.exercisesHead}</h2>
+      {draft.items.length === 0 && <p className="pro-empty">{c.noExercise}</p>}
+      <ol className="pro-items">{draft.items.map((item, i) => {
+        const n = name(item.key), e = guideExercise(item.key), hold = holdOf(item);
+        const commit = field => text => { const v = fixItem({ ...item, [field]: text === '' ? NaN : Number(text) })[field]; setItem(i, { [field]: v }); };
+        // Why the client will not film it: withdrawn from the count, of the guide only, or set as a hold.
+        const why = filmable(item) ? null : !programmable(item.key) ? (guideOnly(item.key) ? c.guideOnlyPro : c.notCountedPro) : c.holdPro;
+        return <li key={`${item.key}-${i}`} className="pro-item" data-testid="pro-item">
+          <div className="pro-item-head">
+            {e ? <Thumb exercise={e} /> : <span className="thumb" />}
+            <span className="pro-item-title">
+              <span className="pro-item-name"><span className="pro-index mono">{String(i + 1).padStart(2, '0')}</span>{n}</span>
+              {why && <span className="pro-tag" data-testid="pro-not-filmed">{c.notCountedTag}</span>}
+            </span>
+          </div>
+          {why && <p className="programme-cue" data-testid="pro-not-counted">{why}</p>}
+          <div className="pro-nums">
+            <NumField id={`p${i}s`} label={c.sets} longLabel={c.setsLong} value={item.sets} onCommit={commit('sets')} />
+            {hold
+              ? <NumField key="hold" id={`p${i}h`} label={c.hold} longLabel={c.holdLong} value={hold} onCommit={text => setItem(i, { holdSec: fixHold(text) })} />
+              : <NumField key="reps" id={`p${i}r`} label={c.reps} longLabel={c.repsLong} value={item.reps} onCommit={commit('reps')} />}
+            <NumField id={`p${i}t`} label={c.rest} longLabel={c.restLong} value={item.rest} onCommit={commit('rest')} />
+          </div>
+          <div className="pro-opts">
+            <Choice id={`p${i}k`} label={c.kindLabel} value={hold ? 'hold' : 'reps'} onChange={kind => setItem(i, withKind(item, kind))}
+              options={[['reps', c.kindReps], ['hold', c.kindHold]]} />
+            <Choice id={`p${i}c`} label={c.sideLabel} value={sideOf(item)} onChange={side => setItem(i, withSide(item, side))}
+              options={SIDES.map(s => [s, c.sideOptions[s]])} />
+          </div>
+          <input className="pro-item-note" type="text" autoComplete="off" autoCapitalize="sentences" maxLength={LIMITS.itemNote}
+            aria-label={`${c.itemNotePlaceholder}, ${n}`} placeholder={c.itemNotePlaceholder} value={item.note} onChange={ev => setItem(i, { note: ev.target.value })} />
+          <div className="pro-item-tools">
+            <button type="button" className="icon-btn press" disabled={i === 0} onClick={() => move(i, -1)} aria-label={c.moveUp(n)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5" /><path d="M6 11l6-6 6 6" /></svg></button>
+            <button type="button" className="icon-btn press" disabled={i === draft.items.length - 1} onClick={() => move(i, 1)} aria-label={c.moveDown(n)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v14" /><path d="M6 13l6 6 6-6" /></svg></button>
+            <button type="button" className="text-btn pro-remove press" onClick={() => drop(i)} aria-label={c.removeLabel(n)}>{c.remove}</button>
+          </div>
+        </li>;
+      })}</ol>
+      {draft.items.length < LIMITS.items && <button type="button" className="btn-ghost press pro-add" onClick={onPick} data-testid="pro-add">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        <span>{c.add}</span>
+      </button>}
+
+      <div className="field pro-note">
+        <label htmlFor="pNote">{c.noteLabel}</label>
+        <textarea id="pNote" rows="3" autoCapitalize="sentences" maxLength={LIMITS.note}
+          placeholder={c.notePlaceholder} value={draft.note} onChange={e => set('note', e.target.value)} />
+      </div>
+
+      <div className="pro-share">
+        <p className="pro-status" role="status">{note || (!programme ? c.needs : '')}</p>
+        <button type="button" className={`btn-primary press${busy ? ' is-busy' : ''}`} aria-disabled={!programme || busy || undefined} onClick={sharePdf} data-testid="pro-pdf">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 15V3.5" /><path d="M7.5 8L12 3.5 16.5 8" /><path d="M5 12v7.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V12" /></svg>
+          <span>{busy ? c.preparing : c.sharePdf}</span>
+        </button>
+        <div className="pro-link-row">
+          <button type="button" className="btn-line press" aria-disabled={!linkReady || undefined} onClick={shareLink} data-testid="pro-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1" /><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1" /></svg>
+            <span>{c.shareLink}</span>
+          </button>
+          <button type="button" className="btn-line press" aria-disabled={!linkReady || undefined} onClick={openQr} data-testid="pro-qr-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM17 17h4v4h-4zM14 20h3v1h-3z"/></svg>
+            <span>{c.showQr}</span>
+          </button>
+          <button type="button" className="btn-ghost press pro-copy" aria-disabled={!linkReady || undefined} onClick={copy} data-testid="pro-copy">{c.copyLink}</button>
+        </div>
+        <button type="button" className={`btn-ghost press${previewBusy ? ' is-busy' : ''}`} aria-disabled={!programme || previewBusy || undefined} onClick={openPreview} data-testid="pro-preview">
+          <span>{previewBusy ? c.previewBusy : c.previewClient}</span>
+        </button>
+        {showLink && linkReady && <div className="field">
+          <label htmlFor="pLink">{c.linkLabel}</label>
+          <input id="pLink" type="text" readOnly value={link} onFocus={e => e.currentTarget.select()} />
+        </div>}
+      </div>
+
+      {draft.items.length > 0 && <div className="actions pro-dup">
+        <button type="button" className="btn-ghost press" onClick={onDuplicate} data-testid="pro-duplicate">{c.duplicate}</button>
+      </div>}
+
+      <div className="pro-delete">
+        {confirm
+          ? <div className="pro-confirm" role="group" aria-label={c.confirmDelete}>
+            <p>{c.confirmDelete}</p>
+            <div className="pro-confirm-row">
+              <button type="button" className="btn-ghost is-s press" onClick={() => setConfirm(false)}>{c.cancel}</button>
+              <button type="button" className="btn-ghost is-s press pro-danger" onClick={onDelete}>{c.confirmYes}</button>
+            </div>
+          </div>
+          : <button type="button" className="text-btn press" onClick={() => setConfirm(true)}>{c.deleteDraft}</button>}
+      </div>
+
+      {showQrModal && (
+        <div className="pro-qr-backdrop" role="dialog" aria-modal="true" aria-label={c.qrTitle} data-testid="pro-qr-modal">
+          <div className="pro-qr-card">
+            <h3 className="pro-qr-head">{c.qrTitle}</h3>
+            <p className="pro-qr-sub">{c.qrSub}</p>
+            {qrDataUrl && (
+              <div className="pro-qr-box">
+                <img src={qrDataUrl} alt={c.qrTitle} className="pro-qr-img" data-testid="pro-qr-img" />
+              </div>
+            )}
+            <div>
+              <button type="button" className="btn-primary press" onClick={() => setShowQrModal(false)} data-testid="pro-qr-close">
+                {c.closeQr}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div></section>
+  </div>;
+}
+
+function Picker({ c, onBack, onChoose }) {
+  const backRef = useRef(null);
+  useEffect(() => { backRef.current?.focus({ preventScroll: true }); }, []);
+  return <div className="wv-experience">
+    <section className="screen is-active pro-screen pro-pick" data-testid="pro-picker"><div className="wrap">
+      <div className="topbar">
+        <button ref={backRef} className="icon-btn press" onClick={onBack} aria-label={c.pickBack}><BackIcon /></button>
+        <span className="pill">{c.eyebrow}</span>
+      </div>
+      {/* Every exercise of the guide (the exercise sheet, 14 October 2026), those the app does not count marked. */}
+      <Suspense fallback={<div aria-busy="true" />}><ExerciseList all copy={{ title: c.pickTitle, note: c.pickNote, tag: c.notCountedTag }} onChoose={onChoose} /></Suspense>
+    </div></section>
+  </div>;
+}

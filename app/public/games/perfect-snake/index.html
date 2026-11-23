@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#0f0818" />
+    <title>Missão — Snake</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #0f0818;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        font-family: system-ui, sans-serif;
+      }
+      #root {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        background: radial-gradient(ellipse at 50% 0%, #1a0840 0%, #0a0420 35%, #0f0818 75%);
+      }
+      #stage {
+        flex: 1 1 auto;
+        min-height: 0;
+        width: 100%;
+        position: relative;
+      }
+      #canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #turn-bar {
+        position: absolute;
+        left: 0;
+        right: 0;
+        display: flex;
+        flex-direction: row;
+        align-items: stretch;
+        justify-content: space-between;
+        gap: clamp(8px, 3vw, 16px);
+        padding: clamp(4px, 1.2vh, 10px) clamp(10px, 4vw, 20px);
+        pointer-events: auto;
+        z-index: 3;
+        box-sizing: border-box;
+      }
+      #turn-bar button {
+        flex: 1;
+        min-width: 0;
+        min-height: 44px;
+        border: 2px solid rgba(255, 138, 26, 0.55);
+        background: rgba(28, 14, 8, 0.94);
+        color: #ff8a1a;
+        font-size: clamp(1.5rem, 7vw, 2.25rem);
+        font-weight: 700;
+        line-height: 1;
+        border-radius: 16px;
+        box-shadow: 0 0 14px rgba(240, 112, 0, 0.28);
+        cursor: pointer;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+      }
+      #turn-bar button:active {
+        background: rgba(240, 112, 0, 0.22);
+        box-shadow: 0 0 20px rgba(255, 138, 26, 0.45);
+      }
+      #turn-bar button[data-action="play-pause"] {
+        flex: 0.9;
+        font-size: clamp(1.15rem, 5.5vw, 1.75rem);
+        letter-spacing: 0.02em;
+      }
+      #turn-bar button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      #dpad {
+        flex: 0 0 auto;
+        display: none;
+        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-rows: auto auto auto;
+        gap: 6px;
+        padding: 8px 12px max(8px, env(safe-area-inset-bottom));
+        max-width: 168px;
+        margin: 0 auto;
+        width: 100%;
+      }
+      html.phone #dpad { display: grid; }
+      #dpad button {
+        border: 1px solid rgba(255, 120, 220, 0.35);
+        background: rgba(40, 20, 60, 0.85);
+        color: #ff9eeb;
+        border-radius: 10px;
+        min-height: 44px;
+        font-size: 1.1rem;
+        cursor: pointer;
+      }
+      #dpad button:active { background: rgba(255, 100, 200, 0.25); }
+      #dpad .sp { visibility: hidden; min-height: 0; padding: 0; border: 0; }
+      #root.is-countdown #turn-bar,
+      #root.is-countdown #dpad {
+        opacity: 0.28;
+        pointer-events: none;
+        filter: saturate(0.6);
+      }
+      .mission-countdown {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        pointer-events: auto;
+        touch-action: none;
+        --cd-orange: #f07000;
+        --cd-hot: #ff8a1a;
+        background:
+          radial-gradient(
+            ellipse 95% 70% at 50% 42%,
+            rgba(255, 138, 26, 0.2),
+            transparent 62%
+          ),
+          radial-gradient(circle at 50% 120%, rgba(196, 87, 0, 0.42), transparent 58%),
+          linear-gradient(180deg, rgba(6, 4, 8, 0.55) 0%, rgba(10, 6, 12, 0.88) 100%);
+        backdrop-filter: blur(10px) saturate(1.2);
+        -webkit-backdrop-filter: blur(10px) saturate(1.2);
+        animation: mission-countdown-in 0.35s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+      }
+      .mission-countdown-out {
+        animation: mission-countdown-out 0.4s ease-in forwards;
+      }
+      @keyframes mission-countdown-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      @keyframes mission-countdown-out {
+        to { opacity: 0; transform: scale(1.03); }
+      }
+      .mission-countdown-halo {
+        position: absolute;
+        width: min(92vw, 420px);
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle,
+          rgba(255, 138, 26, 0.35) 0%,
+          rgba(240, 112, 0, 0.12) 42%,
+          transparent 68%
+        );
+        filter: blur(2px);
+        animation: mission-countdown-halo-pulse calc(1s * (1 + var(--cd-phase, 0))) ease-in-out infinite;
+      }
+      @keyframes mission-countdown-halo-pulse {
+        0%, 100% { transform: scale(0.92); opacity: 0.85; }
+        50% { transform: scale(1.06); opacity: 1; }
+      }
+      .mission-countdown-ring {
+        position: absolute;
+        width: min(78vw, 340px);
+        aspect-ratio: 1;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 200, 120, 0.35);
+        box-shadow:
+          0 0 0 1px rgba(255, 138, 26, 0.15) inset,
+          0 0 60px rgba(240, 112, 0, 0.45),
+          0 0 120px rgba(255, 138, 26, 0.2);
+        animation: mission-countdown-ring-spin 4.5s linear infinite;
+      }
+      @keyframes mission-countdown-ring-spin {
+        from { transform: rotate(0deg) scale(1); }
+        50% { transform: rotate(180deg) scale(1.04); }
+        to { transform: rotate(360deg) scale(1); }
+      }
+      .mission-countdown-digit {
+        position: relative;
+        z-index: 2;
+        font-family: "Bebas Neue", Impact, "Arial Narrow", sans-serif;
+        font-size: clamp(7.5rem, 40vw, 12rem);
+        font-weight: 400;
+        line-height: 0.88;
+        letter-spacing: 0.06em;
+        background: linear-gradient(
+          165deg,
+          #fff4e4 0%,
+          var(--cd-hot) 28%,
+          var(--cd-orange) 52%,
+          #ffb85a 78%,
+          #fff8ee 100%
+        );
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        filter: drop-shadow(0 0 36px rgba(255, 138, 26, 0.75))
+          drop-shadow(0 0 80px rgba(240, 112, 0, 0.35))
+          drop-shadow(0 12px 40px rgba(0, 0, 0, 0.55));
+        transform: scale(1);
+      }
+      .mission-countdown-digit.mission-countdown-pop {
+        animation: mission-countdown-pop 0.55s cubic-bezier(0.15, 1.25, 0.25, 1) both;
+      }
+      @keyframes mission-countdown-pop {
+        0% { opacity: 0.35; transform: scale(0.72); filter: blur(2px); }
+        55% { opacity: 1; transform: scale(1.08); filter: blur(0); }
+        100% { opacity: 1; transform: scale(1); filter: none; }
+      }
+      .game-over {
+        position: fixed;
+        inset: 0;
+        z-index: 70;
+        display: grid;
+        place-items: center;
+        padding: clamp(16px, 5vw, 28px);
+        background:
+          radial-gradient(ellipse 90% 70% at 50% 38%, rgba(255, 138, 26, 0.22), transparent 62%),
+          radial-gradient(circle at 50% 120%, rgba(196, 87, 0, 0.48), transparent 55%),
+          linear-gradient(180deg, rgba(6, 4, 8, 0.62) 0%, rgba(12, 8, 6, 0.94) 100%);
+        backdrop-filter: blur(14px) saturate(1.15);
+        -webkit-backdrop-filter: blur(14px) saturate(1.15);
+        animation: game-over-in 0.4s cubic-bezier(0.2, 0.9, 0.25, 1) both;
+      }
+      @keyframes game-over-in {
+        from { opacity: 0; transform: scale(1.02); }
+        to { opacity: 1; transform: scale(1); }
+      }
+      .game-over-card {
+        width: min(92%, 360px);
+        display: grid;
+        gap: 1.35rem;
+        justify-items: stretch;
+        padding: 1.6rem 1.35rem 1.45rem;
+        border-radius: 26px;
+        border: 1px solid rgba(255, 200, 120, 0.32);
+        background:
+          linear-gradient(155deg, rgba(255, 170, 60, 0.2), transparent 46%),
+          linear-gradient(180deg, rgba(28, 20, 14, 0.94), rgba(10, 8, 10, 0.96));
+        box-shadow:
+          0 28px 80px rgba(0, 0, 0, 0.58),
+          0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+          0 0 70px rgba(240, 112, 0, 0.28);
+      }
+      .game-over-title {
+        margin: 0;
+        text-align: center;
+        font-family: "Bebas Neue", Impact, "Arial Narrow", sans-serif;
+        font-size: clamp(2.6rem, 14vw, 3.6rem);
+        line-height: 0.95;
+        letter-spacing: 0.08em;
+        background: linear-gradient(165deg, #fff4e8 0%, #ff8a1a 35%, #f07000 68%, #ffc878 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        filter: drop-shadow(0 0 32px rgba(255, 138, 26, 0.55));
+      }
+      .game-over-actions {
+        display: grid;
+        gap: 0.7rem;
+      }
+      .game-over-btn {
+        min-height: 52px;
+        border-radius: 16px;
+        font-size: 1rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        border: 2px solid transparent;
+        cursor: pointer;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .game-over-btn--primary {
+        color: #1a0c04;
+        border-color: rgba(255, 200, 120, 0.65);
+        background: linear-gradient(145deg, #ff8a1a, #f07000 58%, #ff9d3a);
+        box-shadow:
+          0 14px 36px rgba(240, 112, 0, 0.45),
+          0 0 0 1px rgba(255, 230, 180, 0.25) inset;
+      }
+      .game-over-btn--ghost {
+        color: #ffead0;
+        border-color: rgba(255, 138, 26, 0.45);
+        background: rgba(20, 10, 6, 0.72);
+        box-shadow: 0 0 24px rgba(240, 112, 0, 0.18);
+      }
+      .game-over-btn:active {
+        transform: scale(0.98);
+      }
+      .goodbye-farewell {
+        position: fixed;
+        inset: 0;
+        z-index: 90;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at 50% 45%, rgba(255, 138, 26, 0.28), transparent 58%),
+          rgba(6, 4, 8, 0.92);
+        backdrop-filter: blur(12px);
+        animation: goodbye-in 0.45s ease-out both;
+      }
+      @keyframes goodbye-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      .goodbye-farewell-hand {
+        font-size: clamp(6.5rem, 34vw, 11rem);
+        line-height: 1;
+        filter: drop-shadow(0 0 40px rgba(255, 138, 26, 0.65));
+        animation: goodbye-wave 0.9s ease-in-out infinite;
+        transform-origin: 70% 85%;
+      }
+      @keyframes goodbye-wave {
+        0%, 100% { transform: rotate(0deg) scale(1); }
+        25% { transform: rotate(14deg) scale(1.04); }
+        50% { transform: rotate(-10deg) scale(1.02); }
+        75% { transform: rotate(16deg) scale(1.06); }
+      }
+      .win-celebration {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #000;
+        animation: win-celebration-in 0.45s ease-out both;
+      }
+      .win-celebration-stage {
+        flex: 1 1 auto;
+        min-height: 0;
+        height: 100%;
+        position: relative;
+        overflow: hidden;
+      }
+      .win-celebration-out {
+        animation: win-celebration-out 0.38s ease-in forwards;
+      }
+      @keyframes win-celebration-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      @keyframes win-celebration-out {
+        to { opacity: 0; }
+      }
+      .win-celebration-video {
+        position: absolute;
+        left: 50%;
+        top: 40%;
+        width: 200%;
+        height: 200%;
+        transform: translate(-50%, -50%);
+        object-fit: contain;
+        object-position: center center;
+        display: block;
+        background: transparent;
+      }
+    </style>
+    <script type="module" crossorigin src="/games/perfect-snake/assets/index-BYl9Qjb4.js"></script>
+  </head>
+  <body>
+    <div id="root">
+      <div id="stage">
+        <canvas id="canvas"></canvas>
+        <div id="turn-bar" aria-label="Virar cobra">
+          <button type="button" data-turn="LEFT" aria-label="Esquerda">◀</button>
+          <button type="button" data-action="play-pause" aria-label="Pausar">⏸</button>
+          <button type="button" data-turn="RIGHT" aria-label="Direita">▶</button>
+        </div>
+      </div>
+      <nav id="dpad" aria-label="Direções">
+        <button type="button" class="sp" tabindex="-1">·</button>
+        <button type="button" data-dir="UP">▲</button>
+        <button type="button" class="sp" tabindex="-1">·</button>
+        <button type="button" data-dir="LEFT">◀</button>
+        <button type="button" class="sp" tabindex="-1">·</button>
+        <button type="button" data-dir="RIGHT">▶</button>
+        <button type="button" class="sp" tabindex="-1">·</button>
+        <button type="button" data-dir="DOWN">▼</button>
+        <button type="button" class="sp" tabindex="-1">·</button>
+      </nav>
+    </div>
+  </body>
+</html>

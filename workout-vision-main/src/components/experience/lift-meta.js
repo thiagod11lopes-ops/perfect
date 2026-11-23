@@ -1,0 +1,32 @@
+import { betaFirst } from '../../lib/liftTiers';
+
+export { limbLabel } from './limb-label';
+
+// The lifts on the choice screen, in order, with their names in both languages and the
+// names people use for them. Kept apart from the drawing code so tests can read it.
+export const LIFTS = ['lateral_raise', 'bicep_curl', 'lat_pulldown', 'squat', 'bench_press', 'hip_thrust', 'romanian_deadlift', 'leg_press', 'overhead_press'];
+// The order of the cards on the rail: every Beta lift first, then the Experimental ones, each group in the
+// order of LIFTS (David, 3 October). Derived from TIERS, so a lift that changes tier moves with it. LIFTS
+// keeps its order: each card's figure takes its phase from its place in LIFTS (lift-scenes.js).
+export const CARD_ORDER = betaFirst(LIFTS);
+export const META = {
+  lateral_raise: { fr: 'Élévations latérales', en: 'Lateral raise', aliasFr: 'Latérales · Lateral raise', aliasEn: 'Side raise · Élévations latérales' },
+  bicep_curl: { fr: 'Curl biceps', en: 'Biceps curl', aliasFr: 'Curl haltère · Biceps curl', aliasEn: 'Dumbbell curl · Curl biceps' },
+  lat_pulldown: { fr: 'Tirage vertical', en: 'Lat pulldown', aliasFr: 'Tirage poitrine · Lat pulldown', aliasEn: 'Pulldown · Tirage vertical' },
+  squat: { fr: 'Squat', en: 'Squat', aliasFr: 'Squat barre · Back squat', aliasEn: 'Back squat · Squat barre' },
+  bench_press: { fr: 'Développé couché', en: 'Bench press', aliasFr: 'DC · Bench press', aliasEn: 'Bench · Développé couché' },
+  hip_thrust: { fr: 'Hip thrust', en: 'Hip thrust', aliasFr: 'Pont de hanches chargé', aliasEn: 'Barbell hip thrust' },
+  romanian_deadlift: { fr: 'Soulevé de terre roumain', en: 'Romanian deadlift', aliasFr: 'SDT roumain · RDL', aliasEn: 'RDL · Soulevé de terre roumain' },
+  leg_press: { fr: 'Presse à cuisses', en: 'Leg press', aliasFr: 'Presse · Leg press', aliasEn: 'Leg press machine · Presse à cuisses' },
+  overhead_press: { fr: 'Développé militaire', en: 'Overhead press', aliasFr: 'Développé épaules · Overhead press', aliasEn: 'Shoulder press · Développé militaire' },
+};
+
+// The limb whose joint counts the lift (core.ts): arm for elbow and shoulder lifts,
+// leg for knee lifts, side for hip lifts. `side` is 'left' or 'right'.
+/** The joint whose angle the counter measures, as a range is named after it: FR with its preposition
+ * ("du coude"), EN bare ("elbow"). Approved under David's standing order of 2 October 2026 (PLAN.md). */
+export function jointName(joint, fr) {
+  const names = { elbow: ['du coude', 'elbow'], shoulder: ['de l’épaule', 'shoulder'], knee: ['du genou', 'knee'], hip: ['de la hanche', 'hip'] };
+  const n = names[joint];
+  return n ? (fr ? n[0] : n[1]) : '';
+}

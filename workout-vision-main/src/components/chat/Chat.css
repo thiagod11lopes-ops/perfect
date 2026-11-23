@@ -1,0 +1,45 @@
+/* Chat (Chat.jsx): the experience's wrapper, topbar and tokens, with the showcase parts of Showcase.css
+   (design/SYSTEM.md). The peer's words in a hairline bubble, the visitor's in the lamp's tint; the field and the
+   attach chip stay at the foot of the screen on frosted glass, as the condensed topbar does at its head.
+   Status: convention (the app's design system; no measurement involved). */
+
+.wv-experience .chat-screen .wrap { min-height: 100%; padding-bottom: 0; }
+.wv-experience .chat-status { display: flex; align-items: center; gap: var(--s-2); }
+.wv-experience .chat-status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--c-accent); flex: none; }
+.wv-experience .chat-screen .topbar .btn-ghost.is-s svg { width: 14px; height: 14px; }
+
+/* The messages. */
+.wv-experience .chat-feed { display: flex; flex-direction: column; gap: var(--s-3); margin-top: var(--s-6); padding-bottom: var(--s-5); }
+.wv-experience .chat-bubble { display: flex; flex-direction: column; gap: var(--s-2); max-width: 86%; padding: 12px 14px 10px; border-radius: 18px; border: 1px solid var(--c-rule); }
+.wv-experience .chat-bubble-peer { align-self: flex-start; border-bottom-left-radius: 6px; background: color-mix(in srgb, var(--bone) 4%, transparent); }
+.wv-experience .chat-bubble-self { align-self: flex-end; border-bottom-right-radius: 6px; border-color: var(--lamp-line); background: color-mix(in srgb, var(--lamp) 12%, transparent); }
+.wv-experience .chat-text { margin: 0; font-size: var(--fs-body); line-height: 1.5; color: var(--c-fg); overflow-wrap: anywhere; }
+.wv-experience .chat-timestamp { align-self: flex-end; font-size: 11px; color: var(--c-fg-muted); font-variant-numeric: tabular-nums; }
+
+/* No message yet: one quiet line where the feed will be. */
+.wv-experience .chat-empty { margin: 0; text-align: center; }
+
+/* The set attached to a message (before 14 October 2026): its name, its count, its three values. */
+.wv-experience .chat-telemetry { display: flex; flex-direction: column; gap: var(--s-2); padding-top: var(--s-2); border-top: 1px solid var(--hair-0); }
+.wv-experience .chat-telemetry-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
+.wv-experience .chat-telemetry-name { font-weight: 600; font-size: var(--fs-caption); color: var(--c-fg); }
+.wv-experience .chat-telemetry-tags { display: flex; gap: 6px; }
+.wv-experience .chat-telemetry-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.wv-experience .chat-telemetry-grid .sc-metric { padding: 8px 10px; }
+.wv-experience .chat-telemetry-grid .sc-metric-value { font-size: 16px; }
+
+/* The foot: on glass, stuck to the bottom of the screen, reaching through the screen's bottom padding. */
+.wv-experience .chat-footer {
+  position: sticky; bottom: 0; z-index: 5; margin: auto calc(var(--gut) * -1) calc(-30px - env(safe-area-inset-bottom, 0px));
+  padding: 12px var(--gut) calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 10px;
+  background: color-mix(in srgb, var(--void) 86%, transparent); -webkit-backdrop-filter: blur(20px) saturate(1.2); backdrop-filter: blur(20px) saturate(1.2);
+  box-shadow: 0 -1px 0 var(--c-rule);
+}
+.no-glass .wv-experience .chat-footer { -webkit-backdrop-filter: none; backdrop-filter: none; background: color-mix(in srgb, var(--void) 94%, transparent); }
+.wv-experience .chat-attach { align-self: flex-start; }
+.wv-experience .chat-input-bar { display: flex; gap: var(--s-2); }
+.wv-experience .chat-input { flex: 1; min-width: 0; height: 48px; padding: 0 16px; border-radius: var(--r-m); border: 1px solid var(--c-rule); background: var(--basalt); color: var(--c-fg); font-size: 16px; outline: none; -webkit-appearance: none; appearance: none; }
+.wv-experience .chat-input::placeholder { color: var(--ash-2); }
+.wv-experience .chat-input:focus { border-color: var(--lamp-line-strong); }
+.wv-experience .chat-send-btn { flex: none; height: 48px; padding: 0 18px; border-radius: var(--r-m); background: var(--c-accent); color: var(--c-on-accent); font-weight: 600; font-size: var(--fs-body); }
+.wv-experience .chat-attach:disabled { opacity: 0.45; cursor: default; }

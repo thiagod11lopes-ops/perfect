@@ -1,0 +1,91 @@
+import { useMemo, useRef, useState } from 'react';
+import { useT } from '../../lib/LanguageContext';
+import { useCondensingTopbar } from '../experience/topbar';
+import { Topbar, GroupHead, Verdict } from '../experience/Showcase';
+import { exerciseById } from '../../lib/kine/library';
+import { RESULT_KEY, cleanResult, payloadAfter, unpack } from '../../lib/kine/links';
+import { COPY, JOINT_NAMES, deg, pct, sec } from '../reference/reference-copy';
+import { TOLERANCE_DEG } from '../../lib/reference/compare';
+import { keepResult, patientKey, patientLabel, requestFollowUp } from '../../lib/kine/store';
+import { KINE } from './kine-copy';
+import { kineJudged } from '../../lib/buildFlags';
+import '../reference/ReferenceCompare.css';
+import './Kine.css';
+
+// A patient's result, opened on the physiotherapist's phone from the link the patient sent (#kine-r=<payload>,
+// lib/kine/links.js): the exercise, the verdict, the tempo, each joint's share of time within tolerance and range
+// reached, and the positions held. Only figures travel: no video, no skeleton. Opening it keeps it in this phone's
+// follow-up (FollowUp.jsx), once.
+
+export default function KineResult({ onClose }) {
+  const { lang } = useT();
+  const fr = lang === 'fr';
+  const k = KINE[fr ? 'fr' : 'en'], c = COPY[fr ? 'fr' : 'en'], names = JOINT_NAMES[fr ? 'fr' : 'en'];
+  const screenRef = useRef(null);
+  useCondensingTopbar(screenRef, [lang]);
+  // Without a judgment (buildFlags.js, kineJudged): a link sent by an earlier version opens on the exercise and the
+  // date, never its verdict or figures.
+  const judged = kineJudged();
+  const r = useMemo(() => cleanResult(unpack(payloadAfter(window.location.hash, RESULT_KEY))), []);
+  const ex = r ? exerciseById(r.id) : null;
+  // Kept in this browser's follow-up when the screen first renders: 'kept', 'already' or 'failed'. React keeps the
+  // first result of a state initialiser (a second run in development finds it 'already' and is dropped).
+  const [kept] = useState(() => (r && ex && judged ? keepResult(r) : null));
+  const [copied, setCopied] = useState(false);
+  const openFollowUp = () => { requestFollowUp(patientKey(r)); window.location.hash = 'kine'; };
+  // On an iPhone, the app installed on the home screen does not share Safari's storage: the link is copied, to be
+  // pasted in the app's follow-up.
+  const copyLink = async () => { try { await navigator.clipboard.writeText(window.location.href); setCopied(true); } catch { /* blocked */ } };
+  const when = r?.date ? new Date(r.date).toLocaleString(fr ? 'fr-FR' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  const who = r ? (r.patient || (r.prog ? patientLabel(r.prog) : '')) : '';
+  const secDiff = r && r.attSec != null && r.refSec != null
+    ? `${r.attSec - r.refSec >= 0 ? '+' : ''}${sec(r.attSec - r.refSec, fr)}`
+    : null;
+
+  return (
+    <div className="wv-experience">
+      <section ref={screenRef} className="screen is-active sc-screen rc-screen kn-screen" data-testid="kine-result-screen">
+        <div className="wrap">
+          <Topbar fr={fr} backTestId="kine-result-back-btn" onBack={onClose || (() => { window.location.hash = ''; })} />
+          {!r || !ex ? <p className="sc-frame-note" data-testid="kn-bad-result">{k.rBad}</p> : <>
+            <p className="eyebrow">{k.rEyebrow}{when ? ` · ${when}` : ''}</p>
+            <h1 className="title">{k.rTitle(who, ex[fr ? 'fr' : 'en'].title)}</h1>
+            {!judged && <p className="sub" data-testid="kn-result-plain">{k.rPlain}</p>}
+            {judged && <>
+            <p className={`rc-verdict is-${r.verdict}`} data-testid="kn-result-verdict">{r.verdict === 'match' ? c.match : r.verdict === 'revise' ? c.revise : c.refused}</p>
+            {r.tempo != null && <p className="sub">{k.rTempo(r.tempo)}{secDiff ? ` (${secDiff})` : ''}</p>}
+            {r.joints.length > 0 && <section className="sc-section">
+              <GroupHead title={c.joints} />
+              <ul className="rc-joints">{r.joints.map(j => <li key={j.name}>
+                <div className="rc-joint-top">
+                  <b>{names[j.name] || j.name}</b>
+                </div>
+                <div className="rc-joint-metrics">
+                  <span><small>{k.rWithin}</small>{j.within == null ? '–' : `${pct(j.within, fr)}${j.gap != null ? ` (${deg(j.gap)})` : ''}`}</span>
+                  <span><small>{k.rRange}</small>{j.range == null ? '–' : pct(Math.min(j.range, 9.99), fr)}</span>
+                </div>
+              </li>)}</ul>
+            </section>}
+            {r.holds.length > 0 && <section className="sc-section">
+              <GroupHead title={k.rHolds} />
+              <ul className="rc-holds">{r.holds.map((h, i) => <li key={i}><div className="rc-hold">
+                <span className="rc-hold-name">{c.holdRow(i)}</span>
+                <span className="rc-hold-vals"><small>{c.holdRef(h.ref, h.refSec)}</small><small>{c.holdAtt(h.att, h.attSec)}</small></span>
+                <Verdict ok={h.status === 'held'}>{h.status === 'held' ? c.holdOk : h.status === 'short' ? c.holdShort : c.holdOff}</Verdict>
+              </div></li>)}</ul>
+            </section>}
+            <p className="sc-caption">{c.note(TOLERANCE_DEG)}</p>
+            </>}
+            {judged && kept != null && <section className="sc-section">
+              <p className="sc-caption" data-testid="kn-result-kept">{kept === 'kept' ? k.rSaved : kept === 'already' ? k.rAlready : k.rFailed}</p>
+              {kept !== 'failed' && <button type="button" className="rc-btn is-primary is-wide press" onClick={openFollowUp} data-testid="kn-result-follow">{k.rOpenFollow}</button>}
+              <button type="button" className="rc-btn is-wide press" onClick={copyLink} data-testid="kn-result-copy">{copied ? k.copied : k.rCopy}</button>
+              <p className="sc-caption">{k.rInstalled}</p>
+            </section>}
+          </>}
+        </div>
+      </section>
+    </div>
+  );
+}
+

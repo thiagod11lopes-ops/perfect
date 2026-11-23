@@ -1,0 +1,88 @@
+{
+  "_meta": { "name": "English", "short": "EN", "flag": "us", "htmlLang": "en" },
+
+  "title": "NEON OPHIS",
+  "tagline": "AN ARCADE THAT DREAMS IN 4K",
+
+  "meta.description": "NEON OPHIS — an arcade snake dreaming in 4K.",
+
+  "splash.presents": "Adriano Franco's",
+  "splash.eatGrow": "EAT · GROW · COMBO · REPEAT",
+  "splash.pressAnyKey": "PRESS ANY KEY",
+
+  "menu.credits": "CREDITS",
+  "menu.creditsBlurb": "who made this thing",
+  "menu.scores": "HIGH SCORES",
+  "menu.scoresBlurb": "the hall of fame",
+  "menu.hi": "HI",
+  "menu.controls": "↑/↓  SELECT      ENTER  PLAY      P  PAUSE      M  MUTE",
+
+  "scores.title": "HIGH SCORES",
+  "scores.noEntries": "no records yet",
+  "scores.controls": "←/→  MODE      ESC  BACK",
+
+  "mode.classic.label": "CLASSIC",
+  "mode.classic.blurb": "The eternal dance. Faster every 5 apples.",
+  "mode.chaos.label": "CHAOS",
+  "mode.chaos.blurb": "3× power-ups. Random events. Rules optional.",
+  "mode.timeattack.label": "TIME ATTACK",
+  "mode.timeattack.blurb": "60 seconds. Walls wrap. No mercy on score.",
+  "mode.relax.label": "RELAX",
+  "mode.relax.blurb": "No stress. Just colors. Try not to bite your own tail.",
+
+  "chaos.foodStorm": "FOOD STORM!",
+  "chaos.speedBurst": "SPEED BURST!",
+  "chaos.slowMo": "SLOW MO!",
+  "chaos.powerupRain": "POWERUP RAIN!",
+
+  "hud.score": "SCORE",
+  "hud.combo": "COMBO",
+  "hud.bestCombo": "BEST COMBO",
+
+  "over.title": "GAME OVER",
+  "over.newHigh": "NEW HIGH SCORE!",
+  "over.score": "SCORE",
+  "over.apples": "APPLES",
+  "over.powerups": "POWER-UPS",
+  "over.bestCombo": "BEST COMBO",
+  "over.survived": "SURVIVED",
+  "over.hiScores": "HI-SCORES",
+  "over.enterYourName": "ENTER YOUR NAME",
+  "over.nameHint": "ENTER  to confirm     BACKSPACE  to erase     ESC  to skip",
+  "over.playAgain": "PRESS  R / ENTER  TO PLAY AGAIN",
+  "over.mainMenu": "ESC  TO  MAIN MENU",
+
+  "quit.title": "QUIT?",
+  "quit.confirm": "Y  /  ENTER  —  confirm",
+  "quit.resume": "N  /  ESC  —  resume",
+
+  "common.play": "PLAY",
+  "common.back": "BACK",
+  "common.yes": "YES",
+  "common.no": "NO",
+  "common.ok": "OK",
+  "common.menu": "MENU",
+
+  "touch.tapMode": "TAP A MODE TO PLAY",
+  "touch.playAgain": "PLAY AGAIN",
+  "touch.tapName": "TAP TO TYPE YOUR NAME",
+
+  "credits.createdBy": "CREATED BY",
+  "credits.roles": "game design · code · art",
+  "credits.quote1a": "\"I wanted a Snake with a soul.",
+  "credits.quote1b": "This one has it.\"",
+  "credits.codePartner": "CODE PARTNER",
+  "credits.partnerLine1": "Every line of TypeScript,",
+  "credits.partnerLine2": "every SID note,",
+  "credits.partnerLine3": "every particle —",
+  "credits.partnerLine4": "pair by pair.",
+  "credits.disclaimer1": "\"No model was harmed",
+  "credits.disclaimer2": "in the making of this game.\"",
+  "credits.techInspiration": "TECHNICAL INSPIRATION",
+  "credits.book1": "The VIC-II, the SID, the CIA —",
+  "credits.book2": "64KB of pure magic.",
+  "credits.book3": "We dreamed this game",
+  "credits.book4": "inside a cartridge.",
+  "credits.madeWith": "MADE WITH ♥ AND LOTS OF CHAOS",
+  "credits.back": "ESC · ENTER · BACK"
+}

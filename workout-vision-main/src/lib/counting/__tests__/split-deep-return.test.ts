@@ -1,0 +1,43 @@
+import { describe, it, expect } from 'vitest';
+import { countReps } from '../core';
+import { jointFrame, sample, timestamps, type Segment } from './synthetic';
+
+describe('deep return split and post-set exit guard', () => {
+  it('splits an overlong rep with deep return (>= 85%) even when set has varied cadence with quick reps', () => {
+    const REST = 170, WORK = 50;
+    const rep = (sec = 1): Segment[] => [{ to: WORK, sec }, { to: REST, sec }, { hold: REST, sec: 0.5 }];
+    const doubled = (returnTo: number): Segment[] => [
+      { to: WORK, sec: 1 }, { to: returnTo, sec: 0.9 }, { to: WORK, sec: 0.9 }, { to: REST, sec: 1 }, { hold: REST, sec: 0.5 },
+    ];
+    // Short rep: 0.55s each way -> 1.1s cycle duration
+    // Regular rep: 1.2s each way -> 2.4s cycle duration
+    // durations[0] (1.1s) < 0.6 * md (1.44s), so isRegular is false.
+    // But 1.1s >= 0.45 * md, so isDeepRegular allows unequivocal return (bestShare >= 0.85) to split.
+    const path: Segment[] = [
+      ...rep(0.55),
+      ...rep(1.2),
+      ...rep(1.2),
+      ...doubled(140),
+      ...rep(1.2),
+    ];
+    const sps = 30;
+    const a = sample(path, REST, sps);
+    const res = countReps(a.map(x => jointFrame('elbow', { left: x })), timestamps(a.length, sps), 'bicep_curl');
+    expect(res.count).toBe(6);
+  });
+
+  it('detects continuous constant-tension flexion repetitions turning around short of highThreshold', () => {
+    const REST = 170, WORK = 50;
+    const path: Segment[] = [
+      { hold: REST, sec: 0.5 },
+      { to: WORK, sec: 1 }, { to: 135, sec: 0.9 }, // Rep 1 (returns 71% of 120° ROM)
+      { to: WORK, sec: 0.9 }, { to: 135, sec: 0.9 }, // Rep 2
+      { to: WORK, sec: 0.9 }, { to: REST, sec: 1 }, // Rep 3
+      { hold: REST, sec: 0.5 },
+    ];
+    const sps = 30;
+    const a = sample(path, REST, sps);
+    const res = countReps(a.map(x => jointFrame('elbow', { left: x })), timestamps(a.length, sps), 'bicep_curl');
+    expect(res.count).toBe(3);
+  });
+});

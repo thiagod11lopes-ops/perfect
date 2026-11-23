@@ -1,0 +1,146 @@
+// The sets saved on this phone, newest first, read once and kept until one is
+// saved or deleted. Old versions of the app saved sets too; they are listed alike.
+import { useEffect, useState } from 'react';
+
+let pending = null, known = null;
+
+// Two tabs of the app share one storage: a change in one tells the others to read the sets again, so a backup
+// or an export made in either holds them all (second audit, 3 October). A screen already open hears it too
+// (onSetsChanged): the history reads its list again, since its backup and export are built inside the tap from
+// the list it shows (third audit C19, 3 October). Where the browser has no channel, each tab keeps reading on
+// its own, as before.
+let channel = null;
+const listeners = new Set();
+try { channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('wv-sets') : null; } catch { channel = null; }
+if (channel) channel.onmessage = e => {
+  if (e.data !== 'changed') return;
+  pending = null; known = null;
+  for (const cb of [...listeners]) { try { cb(); } catch { /* one screen's failure leaves the others told */ } }
+};
+/** Calls cb when another tab changes the sets; returns the function that stops it. */
+export function onSetsChanged(cb) { listeners.add(cb); return () => { listeners.delete(cb); }; }
+const tellOthers = () => { try { channel?.postMessage('changed'); } catch { /* the other tabs read on their own */ } };
+
+export function loadSets() {
+  if (!pending) {
+    const mine = pending = import('../../lib/storage')
+      .then(m => m.getWorkouts({ limit: Number.MAX_SAFE_INTEGER }))
+      .then(list => list.filter(w => (w.exercise || w.exerciseKey) && Number.isFinite(w.reps) && Number.isFinite(setTime(w))))
+      .then(list => { if (pending === mine) known = list; return list; }, e => { if (pending === mine) pending = null; throw e; });
+  }
+  return pending;
+}
+
+/** After a set is saved: read the sets again now, so the next screen has them at once. */
+export function refreshSets() {
+  pending = null; known = null;
+  tellOthers();
+  loadSets().catch(() => {});
+}
+
+/** The sets, if already read: a screen can show them from its first frame. */
+export const knownSets = () => known;
+
+export async function removeSet(id) {
+  const { deleteWorkout } = await import('../../lib/storage');
+  await deleteWorkout(id);
+  tellOthers();
+  if (known) { known = known.filter(w => w.id !== id); pending = Promise.resolve(known); }
+  else pending = null;
+}
+
+/** Stores or clears an optional load in kg on a saved set (absent when cleared, never 0). */
+export async function updateSetLoad(id, kg) {
+  if (!id) return null;
+  const weight = typeof kg === 'number' && Number.isFinite(kg) && kg > 0 ? kg : undefined;
+  const { updateWorkout } = await import('../../lib/storage');
+  const updated = await updateWorkout(id, { weight });
+  tellOthers();
+  if (known) {
+    known = known.map(w => {
+      if (w.id !== id) return w;
+      if (updated) return updated;
+      if (weight !== undefined) return { ...w, weight };
+      const { weight: _w, ...rest } = w;
+      return rest;
+    });
+    pending = Promise.resolve(known);
+  } else {
+    pending = null;
+  }
+  return updated ?? null;
+}
+
+export const setTime = w => new Date(w.createdAt ?? w.date).getTime();
+
+/**
+ * The set a report compares with: the last saved set of the same lift and the same tracked arm or side,
+ * strictly before this one, whose reps were measured with step 3c's boundaries; never the set itself (just
+ * saved, it is the newest) nor a later one (a set opened from the history). A left-arm set is not compared
+ * with a right-arm set, nor a set of one side with a set of both (audit of 6 October). self: { id, at, arm }
+ * of the set reported; an arm the set does not know (null) matches only a set that does not know it either.
+ * A set the body check flagged is not a comparison: its measures are read on a joint the check doubted (saved-set.js
+ * keepsMeasures; before 24 October 2026 it kept none, so it was never picked).
+ */
+export function previousSet(all, lift, self) {
+  const arm = self.arm ?? null;
+  const prev = (all || []).filter(w => (w.exercise || w.exerciseKey) === lift && w.id !== self.id && setTime(w) < self.at
+    && (w.arm ?? null) === arm && w.repDetails?.length && w.repDetailsVersion >= 2 && !w.bodyCheck)
+    .sort((a, b) => setTime(b) - setTime(a))[0];
+  return prev ?? null;
+}
+
+// What the app itself counted: kept apart since this version, and derivable
+// from the counted reps (or the old app's own field) for sets saved before.
+/** The lifts of the newest sets, each once, newest first, at most n: the "Récents" of the choice (WP1.5). */
+export function recentLifts(all, n = 3) {
+  const out = [];
+  for (const w of all || []) {
+    const k = w.exercise || w.exerciseKey;
+    if (k && !out.includes(k)) out.push(k);
+    if (out.length === n) break;
+  }
+  return out;
+}
+
+// A set typed by hand (ManualLog.jsx's, or one the app refused, WP1.6) has no count of the app: null.
+export function countedBy(w) {
+  if (w.source === 'manual') return null;
+  if (w.correctedResult && Number.isFinite(w.machineResult?.reps)) return w.machineResult.reps;
+  if (w.corrected && Array.isArray(w.repDetails)) return w.repDetails.length;
+  if (w.repsOverridden && Number.isFinite(w.machineReps)) return w.machineReps;
+  return w.reps;
+}
+
+/**
+ * Whose proposal a set's count is: 'psc' (the core's, on a refused set) or 'universal' (the universal engine's, for an
+ * exercise the core does not offer, universalProposal.js), when the person confirmed it as it stood after a refusal;
+ * null for a count typed or changed by hand, or counted (saved-set.js; History.jsx and the report read this).
+ */
+export function proposedBy(w) {
+  if (w?.source !== 'manual' || !Number.isFinite(w.proposal?.reps) || w.proposal.reps !== w.reps) return null;
+  return w.proposal.by === 'universal' ? 'universal' : 'psc';
+}
+
+/**
+ * Show the choice after at most `wait` ms, then publish any late storage result
+ * so a slow first read cannot hide access to the visitor's saved sets.
+ * undefined while waiting, null when storage has not answered or failed.
+ */
+export function useSets(wait = 300) {
+  const [sets, setSets] = useState(known ?? undefined);
+  useEffect(() => {
+    let live = true;
+    if (known) {
+      setSets(known);
+      return undefined;
+    }
+    const late = setTimeout(() => { if (live) setSets(s => (s === undefined ? null : s)); }, wait);
+    loadSets().then(list => { if (live) setSets(list); }, () => { if (live) setSets(null); });
+    return () => { live = false; clearTimeout(late); };
+  }, [wait]);
+  useEffect(() => onSetsChanged(() => {
+    loadSets().then(setSets).catch(() => {});
+  }), []);
+  return sets;
+}

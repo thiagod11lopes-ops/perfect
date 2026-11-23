@@ -1,0 +1,104 @@
+// Standardised fitness tests that are counts in a fixed time (David, 2 October 2026: published, standardised tests,
+// so the app's count has a protocol and a meaning). Offered for self-assessment by healthy adults (wellness use),
+// not for clinical use, diagnosis or rehabilitation (BACKLOG.md, note of 6 October). Two items of the Senior Fitness Test
+// (Rikli & Jones): the 30-second chair stand and the 30-second arm curl. Each is counted by its movement's
+// definition (core.ts LIFTS) and scored over a window that opens at the first rise.
+//
+// Protocol rules, as published for the 30-second chair stand (Jones, Rikli & Beam 1999, Res Q Exerc Sport
+// 70(2):113-119) and applied alike to the arm curl in the same battery: the score is the number of full
+// repetitions in 30 seconds; a repetition more than halfway up when time ends counts. Status: literature
+// (protocol), not measured by us; the timing starts at the first rise because a video has no "go" signal
+// (convention). No norm by age or sex is shown: the published tables could not be checked from here, and a
+// norm from memory is not shown (R9).
+import { COUNTABLE_RANGE_DEG } from './counting/core';
+import { FITNESS_TESTS, isTest } from './fitness-test-list';
+
+export { FITNESS_TESTS, isTest };
+
+/**
+ * The rise left open at the end of the video: a test's last stand or curl often ends at the top, so the core,
+ * which counts a cycle only once it returns to rest, leaves it out. After `afterSec`, a rise that starts at rest
+ * (beyond the rest threshold), passes halfway between the thresholds and reaches the working threshold, with no
+ * lost pose on the way, is returned as a rep cut by the end of the video (`clipped`, as core.ts marks one), with
+ * `halfTime` added; else null. Nothing is returned when the set's range is under the core's countable range: a
+ * still or barely moving video scores 0 (R8; review of 2 October). Halfway is the protocol's own rule (Jones,
+ * Rikli & Beam 1999; literature). Used only for tests, inside their window: the core itself counts a last rep cut
+ * on its way back once it is CUT_RETURN_SHARE (70 %) back (core.ts, TRIED.md, 3 October 2026), but a rise cut
+ * before it returns is counted only here, since after a set the same rise can be anything.
+ */
+export function openRise(smoothed, timestamps, low, high, rest, afterSec, minRange = COUNTABLE_RANGE_DEG) {
+  const valid = smoothed.filter(a => a !== null);
+  const lo = Math.min(...valid), hi = Math.max(...valid);
+  if (!valid.length || hi - lo < minRange) return null;
+  // A video held mostly at one end (one stand, then standing to the end) leaves the core's percentile
+  // thresholds together; the rise is then read between the video's own extremes, a tenth in from each.
+  if (high - low < minRange / 2) { low = lo + (hi - lo) / 10; high = hi - (hi - lo) / 10; }
+  const up = rest === 'low', mid = (low + high) / 2;
+  const atRest = a => (up ? a <= low : a >= high), pastHalf = a => (up ? a >= mid : a <= mid), working = a => (up ? a >= high : a <= low);
+  let start = null, half = null;
+  for (let i = 0; i < smoothed.length; i++) {
+    const a = smoothed[i];
+    if (timestamps[i] <= afterSec) continue;
+    if (a === null) { start = half = null; continue; }  // a lost pose breaks the rise (review 04)
+    if (atRest(a)) { start = i; half = null; continue; }
+    if (start === null) continue;
+    if (half === null && pastHalf(a)) half = i;
+    else if (half !== null && !pastHalf(a)) half = null;  // fell back before the top: not this rise
+    if (half !== null && working(a)) {
+      const seg = smoothed.slice(start, i + 1), dt = timestamps[i] - timestamps[start];
+      let peak = 0;
+      for (let k = 1; k < seg.length; k++) peak = Math.max(peak, Math.abs(seg[k] - seg[k - 1]) / (timestamps[start + k] - timestamps[start + k - 1]));
+      // The range runs to the furthest angle the rise reaches before the video ends or the pose is lost, as a
+      // stand's does; the working threshold is where the rise is recognised, not where it ends (second audit,
+      // 3 October: a last stand of 80° read 55°). The mean speed stays the one to the threshold, over its time.
+      let far = seg.at(-1);
+      for (let k = i + 1; k < smoothed.length && smoothed[k] !== null; k++) far = up ? Math.max(far, smoothed[k]) : Math.min(far, smoothed[k]);
+      const rom = Math.abs(far - seg[0]), toThreshold = Math.abs(seg.at(-1) - seg[0]);
+      return { startTime: timestamps[start], endTime: timestamps.at(-1), romDegrees: rom, concentricSec: dt, eccentricSec: 0, peakSpeed: peak, meanSpeed: dt > 0 ? toThreshold / dt : 0, clipped: true, halfTime: timestamps[half] };
+    }
+  }
+  return null;
+}
+
+/**
+ * When each counted rep passes half its movement: the first moment its angle crosses the middle of the set's
+ * thresholds, the same middle as the open rise's (openRise), interpolated between samples. Half the rise's time
+ * is used only when the angle never crosses (audit FINDING-014: completed reps were judged on half their time,
+ * the open rise on half its angle; a rise slow at first passes half its time well before half its movement).
+ */
+export function riseHalfTimes(smoothed, timestamps, low, high, rest, reps) {
+  const mid = (low + high) / 2, past = rest === 'low' ? a => a >= mid : a => a <= mid;
+  return (reps || []).map(r => {
+    let prev = null;
+    for (let i = 0; i < timestamps.length && timestamps[i] <= r.endTime; i++) {
+      if (timestamps[i] < r.startTime) continue;
+      const a = smoothed[i];
+      if (a === null || a === undefined) { prev = null; continue; }
+      if (past(a)) {
+        if (prev === null) return timestamps[i];
+        const [t0, a0] = prev, u = a === a0 ? 1 : (mid - a0) / (a - a0);
+        return t0 + Math.min(1, Math.max(0, u)) * (timestamps[i] - t0);
+      }
+      prev = [timestamps[i], a];
+    }
+    return r.startTime + (Number.isFinite(r.concentricSec) ? r.concentricSec / 2 : (r.endTime - r.startTime) / 2);
+  });
+}
+
+/**
+ * The test's score from the counted reps: the reps whose rise is past halfway within the window, the window
+ * opening at the first rise, the open rise (openRise) among them. `complete` is false when the video ends
+ * before the window does; with no rise at all, the window is measured from the start of the video.
+ */
+export function scoreTest(reps, videoEndSec, windowSec, openRep = null, videoStartSec = null) {
+  // The protocol starts seated (arm straight for the curl). A first rep the video starts inside is a person
+  // filmed from standing sitting down, not a stand (David, 2 October 2026: 9 stands, the app said 10): it is
+  // not scored, and the window opens at the first rise from rest.
+  const fromRest = Number.isFinite(videoStartSec) && reps.length && reps[0].clipped && reps[0].startTime <= videoStartSec + 0.05 ? reps.slice(1) : reps;
+  const all = openRep ? [...fromRest, openRep] : fromRest;
+  if (!all.length) return { score: 0, reps: [], t0: null, open: false, complete: Number.isFinite(videoEndSec) && videoEndSec >= windowSec, beyond: 0 };
+  const t0 = all[0].startTime, end = t0 + windowSec;
+  const halfway = r => (Number.isFinite(r.halfTime) ? r.halfTime : Number.isFinite(r.concentricSec) ? r.startTime + r.concentricSec / 2 : (r.startTime + r.endTime) / 2);
+  const kept = all.filter(r => halfway(r) <= end).map((r, i) => { const { halfTime: _h, ...rep } = r; return { ...rep, index: i + 1 }; });
+  return { score: kept.length, reps: kept, t0, open: !!openRep && halfway(openRep) <= end, complete: Number.isFinite(videoEndSec) && videoEndSec >= end, beyond: all.length - kept.length };
+}

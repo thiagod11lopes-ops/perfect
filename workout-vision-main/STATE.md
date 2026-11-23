@@ -1,0 +1,205 @@
+PLAN.md on main prevails over this file (David, 15 November 2026: "adopt"; the branch counter-core is historical).
+# STATE
+
+Before proposing any counting, measurement or data idea, read TRIED.md: it lists what was tried and closed, with the evidence.
+
+Written 8 November 2026 from PLAN.md, git at `main` `0b82f89c`; the section "State of main, 11 November 2026" below was added on 11 November from git at `main` `55747d0e`, GitHub Actions and issue `#190`.
+Where that section and an older line disagree, that section is the current one.
+A line marked `(unconfirmed)` could not be confirmed from the repository or from GitHub.
+
+Current phase: Phase 7 (`docs/state-fixes`) of David's order of 6 November 2026 (PLAN.md).
+- Phases 1–4: deployed (device verification pending).
+- Phase 5 (`perf/first-paint`): entry chunk 135.9 kB gz (< 150 kB budget), FCP < 800 ms, interactive choice < 1500 ms, MediaPipe pose models deferred until first tap, merged in PR #333 (`f45963d8`), deployed and live.
+- Phase 6 (`loop/blind-count`): blind count collection schema (`test/real-phone/blind/`), `recordedAt` and `sessionId` in shared payload, `npm run scoreboard:blind` gate, SHA-256 integrity lock (`labels.lock`), merged in PR #337 (`0b82f89c`), deployed and live.
+- Phase 7 (`docs/state-fixes`): honest documentation with verified figures only, strict privacy wording, Kinetic Forced Aligner marked experimental, evidence screenshots untracked (`.gitignore`; the last 208 images under `test/real-phone/` by the follow-up to #338).
+
+Live commit: `ec12a7ac` on `main` (deploy run 601, 11 November 2026, 13:11 UTC). `55747d0e` is main's tip; its CI and deploy had not finished when this was written.
+Preview: `https://david-dabert.github.io/workout-vision/`
+
+## Handover: the vision, what was tried, the bottlenecks (12 November 2026)
+
+Written by Claude on David's order of 12 November 2026, so that whichever agent works next, Antigravity included, starts from here and not from zero. Everything below is from David's own messages of 11 and 12 November, from the repository, or from measurements recorded on issue #190.
+
+### The vision, in David's words
+
+- "A server-free, very, very cheap to run, if not free to run, tool": the video never leaves the phone, and that is the proof of the idea, not a limit of it.
+- "Free doesn't have to be mediocre, free can be excellent, innovative, groundbreaking, beautiful, captivating and useful and reliable."
+- "It has to have the feel, the touch, the tactility, the usability, the adaptability."
+- The replay, the person's own video with the skeleton, the count and the tempo: "the part of the app that is the most viral, that people like the most. So I must keep it, but it need to be presented better."
+- The moment that must exist: "when people entered in the app, after their first try, they have to ask a few questions and feel like the app understands them, that the app is giving them something of value, something that they cannot get anywhere else unless they hire a coach or a physio."
+- "How can we make it impossible not to adopt for any user who tried it", "impossible not to share it with other friends".
+- On rules: "the rules cannot forbid us from trying"; "we will make mistakes"; "if they don't work, we remove them".
+- On data: "To ask me for more videos is just lazy"; public videos and datasets come first.
+- On the two agents: Antigravity for speed, Claude for depth, "without us having to do things and then redo them".
+
+What this adds up to: a person films one set and gets, on the phone and for nothing, what only a coach or a physiotherapist gives today: a count they trust, their own movement shown back to them, and a word about it that is true. They pass it on because the video is theirs and looks like nothing else.
+
+### What was tried from 6 to 12 November, and what came of it
+
+| Tried | By | Outcome |
+|---|---|---|
+| Seven phases: honesty, counting gates, first paint under 150 kB, blind-count loop, honest documents (#324 to #340) | Antigravity | Held. The blind-count loop exists and has zero sets from testers. |
+| A looser confidence gate (#342) | Antigravity, David's ruling of 9 November | More sets shown as sure, less often right (60.9 to 58.5 % on public sets). Tightened on 11 November (#372): 60.3 %. |
+| 23 features in about 40 hours: sticking point, velocity loss, hip shoot, butt wink, bar tilt, scapular plane, live clinical overlay, Pessac dossier, kiosk mode, trend engine, retention quiz (#343 to #364) | Antigravity | All passed CI. On David's 20 stored sets the readings did not separate anything (scapular "critical" on 20 of 20). They covered the athlete in the replay. Hidden behind one switch on 11 November (#366), nothing deleted. |
+| Removing what covered the video; four kiné tabs; the comparison's reference and angles under the video; the home without unbuilt offers; light mode on every screen (#366 to #379) | Claude | Merged and live. Not yet confirmed by David on his iPhone. |
+| Gate 7 in CI: a reading must vary across the labelled sets before it is shown (#375) | Claude | Running. Three of six readings fail it today. Passing it is necessary, not sufficient. |
+| A first screen that says what the app stands in for, with what works today said plainly (#381) | Claude | In review on 12 November. |
+| One run per night without David | Claude | Failed on 12 November (no access to the repository). Fires since into a session that holds it. |
+
+The lesson both agents must keep: a green CI proves that code runs, not that what the screen says is true. Speed without that proof produced three days of work that had to be hidden.
+
+### The bottlenecks, and where each solution is
+
+| Bottleneck | Where the solution is |
+|---|---|
+| The count on public video is exact 49 % of the time. | One documented cause: reps done without a return to rest are merged (`test/real-phone/midset-misses/midset-misses.txt`). Card 003. Read TRIED.md first: much is already closed. |
+| No reading of form is proven, so the app cannot yet say "what only a coach says". | Start from what is already measured and true: tempo and range per rep, and how they change across the set. Card 010 builds the first honest word on those. Each other reading returns through its own card, with a reference (gate 7). |
+| Nobody outside David has counted blind. | Public datasets with human labels are already on disk (949 sets) and decide the scoreboards. Testers' counts add to them; three would be a start. |
+| The kiné comparison runs and is unproven. | Card 001: same exercise by the same person must score closer than different exercises, on the public sets; then David's four videos. |
+| The replay is loved and slow to share. | Card 004: one tap, the wait cut, the app's name on the video. |
+| Nothing brings a person back on the second day. | Card 011: today's set against the person's own best set, with the comparison engine that already exists (`src/lib/reference/compare.js`). |
+| The first minute offers 484 exercises (232 and 252 variants) when 7 are solid. | Card 005. |
+| Two agents, one memory. | AGENTS.md "Start here", this file, METHOD.md, `cards/`. An agent that follows them needs nothing else. `ANTIGRAVITY.md` is the prompt to paste into Antigravity. |
+
+### Where to look for a solution that does not exist yet
+
+- First in the repository: `src/lib/` holds more than the screens use (the audit, card 006, lists it), and TRIED.md says what failed and why.
+- Then in public data and published work: datasets with human labels (Countix, MM-Fit, RepCount are already used), papers on repetition counting and on pose from one camera. A method enters only with a way to check it on the labelled sets.
+- A new idea is tried in the lab lane (METHOD.md), behind a switch, at full speed. It reaches a user through a card.
+
+## The promises and where each stands (11 November 2026)
+
+David's recorded words (DIRECTIVES.md Part 1, docs/VISION.md, R16), held against what is measured.
+
+| Promise | Status | Evidence |
+|---|---|---|
+| The video never leaves the phone, no server, free to run | Kept | No upload path; GitHub Pages; anonymous usage counts only |
+| The rep count is right, or the app says it is not sure | Partly | David's sets 13 of 15 and 12 of 17 (scoreboard.txt, 2026-11-18); public sets 468 of 949; right when sure 60.2 % on public sets (408 of 678, 7 off by 3 or more), measured on the gate that ships, set by set (card 016, 13 November 2026) |
+| Whether the execution held up | Partly | Tempo and range per rep are measured and shown; every reading of form is off (gate 7) |
+| What to do next | Not kept | No advice rests on a validated reading |
+| The physiotherapist compares a patient to a reference | Built, unproven | Runs on a real video (David, 11 November); never tested for repeatability (card 001) |
+| A tool for every exercise | Offered, unproven | 484 exercises (232 and 252 variants), 7 Beta, none has passed an exam |
+| Beautiful, one system of design | Partly | Replay and kiné workspace cleaned on 11 November; no screen approved on the iPhone since |
+| A video people share | Built, slow | The replay exports after a wait (card 004) |
+
+## Now
+
+20 November 2026 (Antigravity): Card 049 merged (#514, `2992d281`); Card 050 merged (#513); Card 048 in review (branch `antigravity/048-pro-no-unsourced-templates`). In production builds (`showUnmeasuredRoutes() === false`), Espace pro renders only the coach's own programmes and drafts; unsourced starter templates move behind `showUnmeasuredRoutes()`. MediaPipe WASM network log on `check.html` across Chromium and WebKit (`scripts/verify-wasm-network.mjs`, iPhone 14 profile) proved both engines request `vision_wasm_internal.wasm` (SIMD supported), neither requests `vision_wasm_module_internal.wasm` or `vision_wasm_module_internal.js`. `scripts/copy-models.js` filters out unused module assets, dropping 11.46 MB from `dist/mediapipe/`. `scripts/check-ship-less.mjs` and unit tests (`scripts/__tests__/check-ship-less.test.js`, `scripts/__tests__/copy-models.test.js`) enforce zero dead MediaPipe module assets in production builds. SIMD and non-SIMD runtime assets preserved.
+
+19 November 2026, 12:45 UTC (Claude): `wv-metacognition` made independent of Claude on David's word ("Yes, because I trust you not"): called with the branch and commits only (extra context marked FRAMED), one verbatim line per run in `docs/metacognition-log.md`, and after two tasks that fix none of the three problems the next must change a count, a detection or the kiné verdict. Its first unframed run found the rule exempting its own task; fixed. Next task under that rule: the sure check asks on the 11 sets shown as sure and off by 3 or more (card 064). #504 and #505 merged.
+
+19 November 2026, 12:35 UTC (Claude): #506 (card 064) merged as 01c8f46. Card 065 failed (branch `claude/sure-asks-catastrophic`). Card 064's table had read "shown as sure" on the body check alone; read as the app ships, 3 public build sets are shown as sure and off by 3 or more (one Countix push-up, two MM-Fit dumbbell rows), not 11, and no squat (squat: 68 sure, 61 exact, 0 off by 3 or more). A question when the counted joint makes 2 or more full cycles outside the counted reps (rule fixed before its run) removes all of them on the public sets as the scoreboard reads them (4 rows, 3 distinct videos; 607 -> 584 sure) and 3 of 4 on RepCount-A's build half, but asks on 3 of David's 8 sure videos (all exact; his movements before a set on its beat) and costs RepCount-A 10.3 % of its sure sets against a limit of 10 %: not shipped, no count changed, TRIED.md. The open last rise, which marks the third set, stays David's choice (card 039). Next: card B waits on David's phone reads; card 063 track A on KIMORE's licence.
+
+19 November 2026, 12:10 UTC (Claude): card 064, the per-exercise reliability table (`npm run reliability`, `test/real-phone/reliability/reliability.md`; status rule fixed in the card before the first run, Phase 1 gate thresholds). First run: 232 exercises offered (base keys, fitness tests apart), 25 with a labelled set, 207 not measured; of 29 rows 0 pass on tuning data, 8 fail (squat, Beta in the app, 75 % exact on 96 sets, one shown as sure off by 3 or more), 19 too few, 2 presses. 11 sets shown as sure are off by 3 or more, all public undercounts: the next change makes the sure check ask on them, under R2. README.md and the table of promises named hip thrust Beta; the code has it Experimental since 16 November: corrected. No tier, count or screen changed. 063 track A on KIMORE blocked: licence page 503 twice, mirrors outside the network.
+
+19 November 2026, 12:20 UTC (Claude): David's product decision of 19 November 2026 (after his call with Christophe; relayed by the parent session, not posted by David) recorded at the top of PLAN.md, with what it displaces (the « Espace kiné » row stays; physiotherapist work no longer waits for Phase 5; THE FREEZE lifted for the physiotherapist space, its library and programmes by link only (the base the coach shares; coach screens stay frozen, decision 2 of 18 November)) and what still holds (R8, the lift rule: 701 is the goal, the counter offers 484 today; sealed data; a regulatory opinion before any clinical verdict). cards/README.md ordered by it: card B (#504) first, then 063 track A on KIMORE, the per-exercise reliability table, 063 track C on new renders, the library, programmes by link, usability cuts proposed to David.
+
+19 November 2026, 11:30 UTC (Claude): #501 (operating loop) merged as 2035710, #502 (« Enregistrer les poses ») as a351b39, all CI jobs green on both. Card B on branch `claude/lifter-by-motion`: `src/lib/lifterTrack.js` chooses the lifter over the whole set by motion; no count reads it (TRIED.md, 19 November). A read with one pose per sample is returned as it is, so stored reads are untouched (David's sets 13 -> 13, videos 12 -> 12); occlusion bench with every pose kept: exact 5 -> 6, the bystander never counted. Asking 4 poses changes the first pose on 336 of 4,555 synthetic samples, so multi-pose in the app is its own R2 change. David's phone file of IMG_4186 arrived: first pose 9, the lifter by motion 10 (constants frozen before the file; pinned in CI). Shipped behind `?lifter=1` only; the default waits on David's labelled videos read again on his iPhone with `?lifter=1&poses=1` (R2 on their files). The `?poses=1` file now names the lift, the read's count and the crop pose. `wv-metacognition` (read-only) runs at each task's start and before each report (David, 19 November, relayed by the parent session). Card B: open; the default path waits on R2 (David's phone reads). The nearest-torso rule also counts 10 on IMG_4186, so this set does not separate it from lifterTrack.js. Meanwhile, card 063 (the kiné comparison), as the standing order of 19 November 2026 sets it after card B; docs/OPERATING-LOOP.md's order of work puts coach and physiotherapist work after Phase 1's gate (raised by wv-metacognition); Claude follows the standing order.
+
+18 November 2026, 02:50 UTC (nightly run, Claude): main at 058f05ea. Since 17 November, Antigravity merged #470 (home to the prototype, card 053), #472 (stock queue stream and its scoreboard), #473 (triceps pushdown floor; public 480/949 deciding exact), #474 (one analysis config, card 052); Antigravity holds card 050. Card 049: production `dist` no longer ships the extended screens' chunks or Open Food Facts in its policy (scripts/check-ship-less.mjs, now in CI); the WebKit network log was verified on 20 November 2026 and unused module WASM omitted. Card 054 stays blocked (#471 open).
+
+16 November 2026, 04:30 UTC (Claude): David's decision of 15 November 2026 ("adopt"; "Plan MD signed, governance approved"), from the review board's second opinion (issue #190): PLAN.md on main prevails, and its amendment of 15 November is the one roadmap (five phases with their gates, the freeze of new screens until Phase 1's gate passes, the data rules, the team). Current sets are tuning data; sets filmed after 15 November are sealed (`test/real-phone/sealed/`). Card 038 parked. Card 042 (#447) withdraws the rendered-body figures from the filming screens. A panel of nine independent reviewers (physiotherapist, coach, athlete and habit, navigation, accuracy, biomechanics, market, architecture, red team) reported on 16 November; its synthesis goes to David.
+
+15 November 2026, 02:30 UTC (nightly run, Claude): main at 6c849bc5. Merged on 14 November: #431 (card 027, a single-side lift counts the other arm when the picked one is unseen), #432 (card 029, the one-tap demo runner on check.html), #429 (the agent ledger, branch `ledger`), #434 (CLAUDE.md R5, R6, R15 amended). Open: #433 (card 030, Antigravity). No card was ready; cards 031 to 033 written. Measured: on the public build sets the core refuses none of the 259 seen clearly (TRIED.md).
+
+14 November 2026, night (Antigravity): branch `lab/dormant-counting-bench`, card 026 done: benchmarked the four dormant counting/pose modules of `docs/AUDIT-2026-11.md` (`recurrenceSegmenter.ts`, `kinematicOcclusionInpainter.ts`, `perspectiveInvariance.js`, `groundPlaneCorrection.ts`) in `test/real-phone/dormant-counting/` and closed them in `TRIED.md` (none improves any suite over baseline: recurrence 412/1064 public, 9/20 david, 3/16 video; inpainter 513/1064, 27/68 occlusion; perspective 11/16 video; groundPlane 10/16 video). No `src/` file touched.
+
+14 November 2026, 02:30 UTC: main at efbf88b0 (#415, the overnight lab, no count changed). First run, 531 experiments: nine values kept on half A overfit (real videos 12 to 10, RepCount 27 to 22); `MIN_ROM_DEGREES` 14 alone loses nothing and gains 7 exact on half B. No card was ready; cards 023 (ship that value through R2) and 024 (a second run guarded by the real videos) written, both ready.
+
+13 November 2026, 15:00 UTC: main at e484d902 (#412, card 017 done). The queue was finished; new cards 021 (one exercise passes its exam, blocked on David's four curl sets) and 022 (the security policy without `'unsafe-eval'`). Card 022 failed: the WebCodecs path is refused without it, as on 3 October; a guard test now holds that path.
+
+13 November 2026, 13:00 UTC: main at 0a1d1a6c (#411, card 019 done). Card 017 done: the tour's suspected leak is not one in Chromium (40 filming screens, heap 8.2 to 8.5 MB, nodes and listeners unchanged). Every card in the queue is now done, failed, blocked on David (001 videos, 012 video, 020 his choice a, b or c) or in its lab lane (011). The next run writes new cards from the register and STATE.md's table of promises.
+
+13 November 2026, 11:55 UTC: main at 44dc63dc (#409 R6 amended, #410 card 003 closed). Card 019 done: range and tempo against the synthetic truth, at the guided view 19 degrees and 0.5 s low at the median (36 degrees, 0.8 s at the 90th percentile), stated in `measures.js`. Card 020 asks David to choose: hide the numbers, relabel them as a comparison between reps, or keep them as they are.
+
+13 November 2026, 10:50 UTC: R6 amended on David's decision ("Merge automatically", #409). Card 003 failed after two attempts, both closed on half A (a split by a second signal: gain at most 3, break 15; SPLIT_LONG swept 1.4 to 2.0: flat). The core's thresholds are not the lever for merged reps; TRIED.md names the pose input. Next ready card: 019, range and tempo against a known truth.
+
+13 November 2026, 10:00 UTC: main at c6aac409. Merged: #403 (the coach's office only in the extended build), #406 (card 017 handover), #407 (card 018, failed: sure only of whole sets, 85.0 % on half B against 90 %, in TRIED.md). Card 003, attempt 1 of 2 failed at its ceiling (a split by a second signal: half A gain at most 3, break 15). Next: card 003, attempt 2.
+
+13 November 2026, morning (08:45 UTC): main at c0c401b7. Merged: #404 (card 017, three of four parts: no em-dash in `src`, `e2e`, `scripts`; no `eval`; lint on reached files 128 to 64, unused code 64 to 0; scoreboards unchanged) and #405 (cards 018 and 019; card 005's handover; register #29, the CSP allows `'unsafe-eval'`). Run 1064's `lift-hero` failure did not recur in runs 1070 and 1071: recorded as a one-off. In review: #403 (the coach's office only in the extended build). Next card: 018.
+
+13 November 2026, morning (08:00 UTC): card 005 done (#402): already true on main, now held by `e2e/first-minute.spec.js` (the first screen of the carousel holds only Beta exercises; an Experimental exercise says so before filming). Main at 77e2fc1a. In review: #403 (the coach's office only in the extended build), #404 (card 017, three of four parts), #405 (cards 018 and 019). Main's CI run 1064 failed once on a duplicate `lift-hero` view transition in `tactility.tests.js`; cause not found, not reproduced (branch `fix/lift-hero-race`). Next card: 018. Open for David: R6 against "merge on green"; testers; the kiné videos; deleting the 60 files nothing reaches.
+
+13 November 2026, morning: cards 016 and 015 done (#398, #399, #400); main at 5635d4ff. Since #400 the kiné follow-up shows each session's measures and the change from the first dated session to the last, and no clinical trend: the engine named a trajectory and a cause (« fatigue neuromusculaire ») from one difference of means, with unsourced thresholds; it returns only through `CLINICAL_TREND_SHOWN` in `measures.js`. Card 001 stays blocked on David's four videos; next card: 011. Open for David: R6 against "merge on green"; the coach's accounting and nutrition; deleting the 60 files nothing reaches.
+
+13 November 2026, early morning: card 016 done (#396, #398); main at 79a3f370. `sure.ts` now decides sure as the result screen does (0 differences on 949 public sets and David's 15): right when sure 408 of 678 (60.2 %), 7 off by 3 or more. A new guard, `screen-numbers.test.jsx`, fails if the production report shows a number beside a unit `measures.js` does not switch on. Next card: 015. Open for David: R6 against "merge on green"; the coach's accounting and nutrition; deleting the 60 files nothing reaches.
+
+13 November 2026, night: the flaw register (`docs/FLAWS-2026-11.md`, #394) and card 014 (#395) merged; main at 8193cff6. Since #395 the production build offers no profile quiz after the third set, the report badge reads « Vue 3D & PDF » and the 3D view « Vue 3D estimée », and the bar path is offered only on barbell lifts. Card 016 in review (#396). Next card: 016's second part, then 015. Open for David: R6 against "merge on green"; the coach's accounting and nutrition; deleting the 60 files nothing reaches.
+
+Main at `b6f0f419` (12 November 2026, night): cards 006, 013, 010 and 004 merged (#383, #384, #386, #388, #389). Live since #384: no coach prescription in the report or its PDF, no athlete profile row on the home, `#equine` and the sport addresses return to the home. Since #386: after a saved set, two questions (the goal, what bothers the person), one tap each and skippable, then one sentence read from range and tempo per rep under « Votre objectif : … » (`first-word.js`, checked on David's 20 sets). Since #388 and #389: the video to share is prepared while the replay plays (2 taps, no wait once watched, against 3 taps and 12.6 s), one share action with the video without text as a choice. Open question for David: the app's name on the shared video (his decision of 29 September says the report names no app). Card 001 (#391): the kiné comparison tells the same exercise twice from another exercise on 99.7 % of 10562 public triplets, and from the same exercise by another person on 95.2 %; blocked on David's four videos for its own question, one side twice against the other side. None seen by David on his iPhone yet. Next card: 011.
+
+Main at `63b113ee` (12 November 2026): PRs #366 to #380 merged, except #373 (home badge, open). In progress: PR #381, the first screen (headline, and under it why, what works today, one repeated action), branch `feat/first-screen`. Cards done: 002, 007, 008, 009. Next ready, in the order of `cards/README.md`: 006, 004, 001, 005, 003.
+
+The nightly run (03:17 Paris time) did not start on 12 November: its session had no access to the repository. Since 12 November it fires into a session that holds the repository and can push (checked that day by a dry run).
+
+A wanted change of a screen that has a picture test gets its new picture from CI: run the workflow "Update visual snapshots" on the branch (`.github/workflows/snapshots.yml`), then read which pictures its commit changed.
+
+## State of main, 11 November 2026
+
+Merged between 9 and 11 November (Antigravity, PRs #342 to #364): the confidence gate asks only when a recount is refused or differs by 2 or more (#342), and a series of biomechanical readings, kiné screens and a printed "Pessac" dossier.
+Measured on 11 November (issue `#190`):
+- **Gate of #342**: on the public build sets, shown as sure 731 (was 670), exact among them 428, that is 58.5 % (was 408, 60.9 %); errors of 3 or more shown as sure 10 (was 6). On David's sets: 13 sure with 11 exact, and 8 of 8. `test/real-phone/accuracy/sure.ts` models the gate that ships: checked set by set against the result screen's rule on 13 November 2026 (card 016, `sure-parity.test.ts`, 0 differences on David's 15 sets and the 949 public sets).
+- **Biomechanical readings on David's 20 stored sets**: scapular index "critical" on 20 of 20, bar index "critical tilt" on 16, "butt wink" on 13, "hip shoot" on 12, velocity decline 0 to 82 %. They do not discriminate.
+
+Decisions applied on 11 November (David's orders of that day, PRs #366 to #370):
+- **One switch, `UNVALIDATED_BIOMECHANICS_SHOWN = false`** (`src/components/experience/measures.js`): the replay shows the video, the skeleton, the count and the tempo, and none of those readings; no file deleted (#366).
+- **Printed dossier**: prints « Non mesuré » unless a value was measured, and claims no certification (#366).
+- **Comparer tab**: the patient's healthy side can be the reference, mirrored (#367). Not yet run on a real pair of recordings.
+- **Result screen**: `MovementOptimizationCard` is no longer rendered; the retention quiz waits for the third saved set (#368).
+- **Kiné workspace**: four tabs, Programme, Suivi, Comparer, Mon cabinet. The Pessac assessment tab and the "Dossier Clinique BDK" button render only with `VITE_EXTENDED_ROUTES=1`, unset in production (#369).
+- **Replay**: "Vue 3D" and "Trajectoire de la barre" sit under the playback controls (#370). David, 11 November: both stay.
+- **Per-rep table**: exists already (`repTable`, `report-sheet.js`): always in the report, on the result screen at expert level only. The speed-change line stays off (`SPEED_CHANGE_SHOWN = false`).
+
+Scoreboards on 11 November: unchanged, CI passed them against the baselines of 7 November on each of those PRs (13 of 15, 12 of 16, 468 of 949).
+
+Open on 11 November:
+- None of PRs #366 to #370 has been confirmed by David on his iPhone (R3).
+- The tour step "Keep Filmer ma série in view for every exercise" timed out twice on CI's WebKit (#369, then main at `44e47a35`), on the click that opens the 35th filming screen of one page. The sweep now takes a fresh page every 20 screens. The cause, a page that slows as filming screens are opened and closed, is not found: it may be a leak in the filming screen, and no WebKit was available to measure it.
+- Unreachable code in main: `mirrorReference.ts`, `KineCabinetMode.jsx`, `stateMachines.ts`, `pessacClinicalSpecialties.ts`.
+- `src/components/experience/__tests__/no-unmeasured-metrics.test.jsx` checks a word list, not what a screen measures.
+- Committed at the repository root in #351, purpose not confirmed by David: `workoutvision-standing-deltoids` (8.5 MB), `IMG_3198.jpg`, `IMG_3209.jpg`.
+- PRs #335 and #323 are superseded and still open.
+- Antigravity's quota is exhausted until 14 November 2026.
+
+## Scoreboards (8 November 2026)
+
+- **Real-phone scoreboard (David's 15 labelled phone sets, the R2 gate)**: **13 of 15 exact**, 2 off by 1 (`reverse_curl_10` counted 9 for 10 on collector landmarks, `lateral_raise_9` counted 8 for 9), **0 off by 3 or more**, 0 refused (`npm run scoreboard`; `test/real-phone/accuracy/scoreboard.txt`). The 5 bench and overhead press sets are measured and decide nothing (PLAN.md).
+- **David's videos read whole by the built app (the 17 sets of the video baseline, `sets-07oct-video/`, `sets-14nov-video/` and the others)**: **12 of 17 exact** (`test/real-phone/accuracy/scoreboard.txt`, run dated 2026-11-18), 2 refused (`sissy_squat_7_5008`, `standing_barbell_curl_8`), and **1 known error of 3 or more** (`sets-14nov-video/dumbbell_bench_press_9_angle`, label 9, counted 16, shown as known and gated on growth).
+- **Public build scoreboard (`npm run scoreboard:public`, 949 deciding sets across Countix, MM-Fit, CFRep)**:
+  - Deciding exact: **468 of 949 deciding exact (49%)**, 1064 build sets total, 517 exact (49%), 0 newly off by 3 or more.
+  - Per dataset (counted by sets, press included as in headline): MM-Fit 117 of 158 (74%), Countix cut 204 of 447 (46%), Countix whole 188 of 447 (42%), CFRep 8 of 12 (67%). Countix distinct clips: both readings exact on 172 of 447 (38%), either reading on 220 (49%).
+- **Testers' blind counts (`npm run scoreboard:blind`, `test/real-phone/blind/`)**: **0 recorded sets** as of 8 November 2026; collection loop, schema, baseline gate, and lock are operational.
+- **Exams (`test/real-phone/exam/`, `test/real-phone/exam/testers/`)**: 0 David exam sets and 0 tester blind exam sets exist as of 8 November 2026; no exercise has passed an exam yet.
+
+## Privacy & Legal Statement
+
+*"Aucune vidéo ni donnée patient ne quitte le téléphone sans action explicite de l'utilisateur ; seuls des compteurs d'usage anonymes sont envoyés."* (David's ruling of 8 November 2026).
+- Pose detection, repetition counting, biomechanical metrics, storage, and PDF generation run entirely in the browser on the user's phone.
+- The app never uploads videos, frames, or landmarks to any server without explicit user action.
+- Usage events (`feedback-worker/`) send only anonymous operational counters when configured, gated by the CNIL audience-measurement notice and opt-out toggle (`src/components/experience/UsageNotice.jsx`).
+- Kiné patient video upload in `KinePatient.jsx` and `glimpse-proxy/` is disabled (ruled off by David on 24 October 2026; `glimpse-proxy/proxy.test.js`, `src/components/kine/Kine.test.jsx`, `src/lib/kine/__tests__/glimpse.test.js`).
+- The published build sends the anonymous usage counts: deploy run `42468256377` builds with `VITE_EVENTS_URL` naming the feedback worker.
+- No claims of "zero legal friction", "zero HDS", or "100% compliant" are permitted or made.
+
+## Product & Governance State (8 November 2026)
+
+- **Offered**: 484 exercises: 232 (27 added in batch 1 and 22 in batch 2 on 18 November 2026) and 252 variants of them (same day, src/lib/variant-key.js), all but the Beta lifts experimental; every variant is experimental. Tiers (`src/lib/liftTiers.js`): Beta: biceps curl, lat pulldown, squat, Romanian deadlift, leg press, machine seated back extension. Experimental: hip thrust (since 16 November 2026), lateral raise, bench press, overhead press, and all other lifts. None has passed an exam.
+- **Experimental Markers**: Kinetic Forced Aligner trajectory matching in `MovementOptimizationCard.jsx` is marked experimental (its template in `KineticForcedAligner.ts` is hand-written, R9); since 11 November the card is not rendered (#368).
+- **French register and naming**: The screens use `"vous"`. The brand is `"WorkoutVision"`, and in French the app is referred to as `"l’appli"`.
+- **Sub-agents**: `wv-reviewer`, `wv-verifier` and `wv-control` (`.claude/agents/`).
+
+## Open Problems (8 November 2026)
+
+- **Mid-set counting misses on public video (`test/real-phone/midset-misses/midset-misses.txt`)**:
+  - Across 420 RepCount-A and MM-Fit build sets, the core misses middle reps predominantly due to `merged_no_rest_return` (constant-tension reps not returning past global rest) and cycle absorption.
+- **2D camera pose ceiling on short clips**:
+  - Heuristics and self-similarity algorithms hit a ~40–44% ceiling on short, cut clips where reps start or terminate mid-cycle.
+- **Press lifts**:
+  - Bench press and overhead press remain Experimental and decide no gate.
+
+## Not Verified (Expunged from Documentation)
+
+- Real-phone stored sets: claims of 14/15 or 15/15 exact are unverified; measured proof is **13 of 15 exact**.
+- Real videos: claims of 13/16 or 14/16 exact are unverified; measured proof is **12 of 17 exact** (scoreboard.txt, 2026-11-18), with one known error of 3 or more.
+- External tester blind sets: 0 recorded sets exist to date.
+- Any legal or regulatory certification claim (HDS, GDPR compliance seal).
