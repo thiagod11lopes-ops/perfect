@@ -2,6 +2,10 @@
 
 Aplicativo web de **desafio de dieta e treino** (28 dias): rotina diária, cartões de hábitos, economia de moedas, minijogos e celebrações ao desbloquear novas semanas.
 
+## Demo online (GitHub Pages)
+
+**Interface celular:** [https://thiagod11lopes-ops.github.io/perfect/celular](https://thiagod11lopes-ops.github.io/perfect/celular)
+
 ## Desenvolvimento
 
 O app principal fica em `app/` (React + Vite + TypeScript).

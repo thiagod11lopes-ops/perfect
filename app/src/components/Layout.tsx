@@ -3,6 +3,7 @@ import { WaterMissionHost } from './WaterMissionHost'
 import { WeekUnlockHost } from './WeekUnlockHost'
 import { brand } from '../data/content'
 import { useApp } from '../store/AppContext'
+import { publicUrl } from '../utils/publicUrl'
 
 const links = [
   { to: '/', label: 'Hoje', ico: '◉' },
@@ -21,7 +22,7 @@ export function Layout() {
     if (!confirm('Sair e excluir todos os dados salvos neste dispositivo?')) return
     dispatch({ type: 'RESET' })
     localStorage.removeItem(STORAGE_KEY)
-    window.location.href = '/onboarding'
+    window.location.href = publicUrl('onboarding')
   }
 
   return (

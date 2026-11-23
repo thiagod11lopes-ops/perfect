@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { publicUrl } from '../utils/publicUrl'
 
 const WV_MSG = 'perfect-workout-vision'
 
@@ -44,7 +45,7 @@ export function WorkoutVisionEmbed({
       lift,
       lang: 'en',
     })
-    return `/games/workout-vision/index.html?${q.toString()}`
+    return `${publicUrl('/games/workout-vision/index.html')}?${q.toString()}`
   }, [lift, sessionKey])
 
   useEffect(() => {

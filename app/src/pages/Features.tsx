@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { brand } from '../data/content'
 import { features, type FeatureModule } from '../data/features'
 import { useAppBase } from '../hooks/useAppBase'
+import { publicUrl } from '../utils/publicUrl'
 
 const modules: Array<'Todas' | FeatureModule> = [
   'Todas',
@@ -42,7 +43,7 @@ export function Features() {
 
       <header className="features-top">
         <Link to={path('/')} className="features-brand">
-          <img src="/logo.png?v=do-zero-cinza-solido" alt={brand.name} />
+          <img src={publicUrl('/logo.png?v=do-zero-cinza-solido')} alt={brand.name} />
         </Link>
         <div className="features-top-meta">
           <span className="features-live-dot" />

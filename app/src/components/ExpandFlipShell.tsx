@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { publicUrl } from '../utils/publicUrl'
 
 export type CardOrigin = {
   top: number
@@ -127,7 +128,7 @@ export function ExpandFlipShell({
           <div className="deck-modal-face deck-modal-back">
             <div className="deck-back-pattern" />
             <span className="deck-back-logo deck-back-logo-lg" aria-hidden>
-              <img src="/card-seal.webp" alt="" />
+              <img src={publicUrl('/card-seal.webp')} alt="" />
             </span>
           </div>
           <div className={`deck-modal-face deck-modal-front ${frontClassName}`.trim()}>

@@ -1,3 +1,4 @@
+import { publicUrl } from '../utils/publicUrl'
 import { getAdminVideo } from './adminContent'
 
 /**
@@ -163,11 +164,10 @@ const animationsByKeyword: Array<{ match: RegExp; src: string }> = [
 ]
 
 function animationFor(exercise: string): string | undefined {
-  if (animationsByExercise[exercise]) return animationsByExercise[exercise]
-  for (const entry of animationsByKeyword) {
-    if (entry.match.test(exercise)) return entry.src
-  }
-  return undefined
+  const raw =
+    animationsByExercise[exercise] ??
+    animationsByKeyword.find((entry) => entry.match.test(exercise))?.src
+  return raw ? publicUrl(raw) : undefined
 }
 
 export function resolveExerciseDemo(exercise: string): ExerciseDemo {
@@ -227,12 +227,13 @@ export type MemoryMatchExercise = {
 export function getMemoryMatchExercisePool(): MemoryMatchExercise[] {
   return MEMORY_MATCH_FACE_VIDEOS.map((entry) => ({
     ...entry,
+    faceSrc: publicUrl(entry.faceSrc),
     faceMedia: 'video' as const,
   }))
 }
 
 export function exerciseDemoEmbedUrl(demo: ExerciseDemo) {
-  if (demo.src) return demo.src
+  if (demo.src) return demo.src.startsWith('/') ? publicUrl(demo.src) : demo.src
   if (demo.youtubeId) {
     return `https://www.youtube.com/embed/${demo.youtubeId}?rel=0&modestbranding=1&playsinline=1`
   }

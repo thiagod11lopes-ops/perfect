@@ -1,4 +1,5 @@
 import { getDayGame, gameIdFromChallengeId } from '../data/dayGames'
+import { publicUrl } from '../utils/publicUrl'
 import type { SpecialRouletteOutcome } from '../data/specialCardRoulette'
 import {
   SpecialCardRoulette,
@@ -218,7 +219,7 @@ export function DayGameEmbed({
       <iframe
         className="day-game-frame"
         title={game.title}
-        src={game.embedPath}
+        src={publicUrl(game.embedPath)}
         allow="autoplay"
         style={{ backgroundColor: 'transparent', colorScheme: 'dark' }}
       />

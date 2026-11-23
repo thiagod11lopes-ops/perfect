@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppBase } from '../hooks/useAppBase'
 import { useApp } from '../store/AppContext'
+import { publicUrl } from '../utils/publicUrl'
 import { NeonophisDumbbellTrack } from './NeonophisDumbbellTrack'
 
 const MSG = 'perfect-neonophis'
@@ -77,7 +78,7 @@ export function NeonophisEmbed({
 
   useEffect(() => {
     let cancelled = false
-    void fetch('/games/neonophis/embed-build-id.txt', { cache: 'no-store' })
+    void fetch(publicUrl('/games/neonophis/embed-build-id.txt'), { cache: 'no-store' })
       .then((r) => (r.ok ? r.text() : ''))
       .then((text) => {
         if (!cancelled) setBuildId(text.trim())
@@ -105,7 +106,7 @@ export function NeonophisEmbed({
     q.set('_cb', mountStamp.current)
     if (isMobileSim) q.set('phone', '1')
     if (!isMobileSim && state.devMode) q.set('cellPx', String(cellPx))
-    return `/games/neonophis/index.html?${q.toString()}`
+    return `${publicUrl('/games/neonophis/index.html')}?${q.toString()}`
   }, [targetCoins, durationSec, sessionKey, buildId, gridW, gridH, cellPx, isMobileSim, state.devMode])
 
   useEffect(() => {

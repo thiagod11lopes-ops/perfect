@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getMemoryMatchExercisePool } from '../data/exerciseDemos'
+import { publicUrl } from '../utils/publicUrl'
 import {
   MEMORY_MATCH_DURATION_SEC,
   type MemoryLevelDef,
@@ -286,7 +287,7 @@ export function MemoryMatchBoard({
               >
                 <div className="memory-match-flip-face memory-match-flip-face--back deck-card-back memory-match-back">
                   <div className="deck-back-pattern" aria-hidden />
-                  <img src="/card-seal.webp" alt="" className="memory-match-seal deck-back-logo" />
+                  <img src={publicUrl('/card-seal.webp')} alt="" className="memory-match-seal deck-back-logo" />
                 </div>
                 <div className="memory-match-flip-face memory-match-flip-face--front memory-match-face">
                   <video

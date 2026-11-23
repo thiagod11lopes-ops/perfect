@@ -2,6 +2,7 @@ import { useLayoutEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { brand, goldenRules } from '../data/content'
+import { publicUrl } from '../utils/publicUrl'
 import {
   cloneDailyRoutine,
   completedWeekdayCount,
@@ -146,7 +147,7 @@ export function Onboarding() {
     <div className="app-shell">
       <main className="main fade-in" style={isMobileSim ? undefined : { maxWidth: 720 }}>
         <div className="hero-panel stack">
-          <img className="logo-mark" src="/logo.png?v=do-zero-cinza-solido" alt={brand.name} />
+          <img className="logo-mark" src={publicUrl('/logo.png?v=do-zero-cinza-solido')} alt={brand.name} />
           <p className="eyebrow">Bem-vindo ao desafio</p>
           <h1 className="display h1">Do zero ao topo em 28 dias</h1>
           <div className="row" style={{ flexWrap: 'wrap' }}>

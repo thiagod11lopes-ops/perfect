@@ -30,6 +30,7 @@ import {
   setWaterMissionFlushPaused,
 } from '../data/waterMissionCelebrate'
 import { noteCoinCrossing, setWeekUnlockFlushPaused } from '../data/weekUnlockCelebrate'
+import { publicUrl } from '../utils/publicUrl'
 import {
   bandLabel,
   buildDayChallenges,
@@ -1243,7 +1244,7 @@ function DeckTile({
             <DayChallengeBackArt />
           ) : (
             <span className="deck-back-logo" aria-hidden>
-              <img src="/card-seal.webp" alt="" />
+              <img src={publicUrl('/card-seal.webp')} alt="" />
             </span>
           )}
           <span

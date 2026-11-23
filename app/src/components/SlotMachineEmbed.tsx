@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { publicUrl } from '../utils/publicUrl'
 import type { SpecialRouletteOutcome, SpecialRouletteStake } from '../data/specialCardRoulette'
 
 const SLOT_MSG = 'perfect-slot'
@@ -65,7 +66,7 @@ export function SlotMachineEmbed({
       maxSpins: '3',
       stake: String(stake),
     })
-    return `/games/slot-machine/index.html?${q.toString()}`
+    return `${publicUrl('/games/slot-machine/index.html')}?${q.toString()}`
   }, [stake, sessionKey])
 
   useEffect(() => {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppBase } from '../hooks/useAppBase'
+import { publicUrl } from '../utils/publicUrl'
 
 const MSG = 'perfect-neonophis'
 
@@ -53,7 +54,7 @@ export function PerfectSnakeEmbed({
 
   useEffect(() => {
     let cancelled = false
-    void fetch('/games/perfect-snake/embed-build-id.txt', { cache: 'no-store' })
+    void fetch(publicUrl('/games/perfect-snake/embed-build-id.txt'), { cache: 'no-store' })
       .then((r) => (r.ok ? r.text() : ''))
       .then((text) => {
         if (!cancelled) setBuildId(text.trim())
@@ -75,7 +76,7 @@ export function PerfectSnakeEmbed({
     const cacheBust = [buildId, mountStamp.current, sessionKey].filter(Boolean).join('-')
     q.set('v', cacheBust)
     if (isMobileSim) q.set('phone', '1')
-    return `/games/perfect-snake/index.html?${q.toString()}`
+    return `${publicUrl('/games/perfect-snake/index.html')}?${q.toString()}`
   }, [targetCoins, durationSec, sessionKey, buildId, isMobileSim])
 
   useEffect(() => {

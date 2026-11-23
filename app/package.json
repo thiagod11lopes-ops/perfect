@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:ghpages": "tsc -b && vite build --mode ghpages && node scripts/patch-ghpages-assets.mjs",
     "build:slot-machine": "npm --prefix ../Slotmachine_react-master run build",
     "build:workout-vision": "npm --prefix ../workout-vision-main run build:perfect-embed",
     "build:neonophis": "npm --prefix ../neonophis-main run build:perfect-embed",

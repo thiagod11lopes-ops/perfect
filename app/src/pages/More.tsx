@@ -8,6 +8,7 @@ import { useAppBase } from '../hooks/useAppBase'
 import { useAppClock } from '../hooks/useAppClock'
 import { useApp } from '../store/AppContext'
 import { formatCoins } from '../utils/format'
+import { publicUrl } from '../utils/publicUrl'
 
 type Tab = 'menu' | 'rules' | 'shop' | 'water' | 'dev'
 
@@ -363,7 +364,7 @@ export function More() {
             if (!confirm('Sair e excluir todos os dados salvos neste dispositivo?')) return
             dispatch({ type: 'RESET' })
             localStorage.removeItem('zero-ao-topo-mvp-v1')
-            window.location.href = path('/onboarding')
+            window.location.href = publicUrl(path('/onboarding'))
           }}
         >
           <span className="check-box">⎋</span>

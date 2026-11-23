@@ -13,6 +13,7 @@ import { Onboarding } from './pages/Onboarding'
 import { Progress } from './pages/Progress'
 import { Workout } from './pages/Workout'
 import { AppProvider, useApp } from './store/AppContext'
+import { routerBasename } from './utils/publicUrl'
 
 function useBase() {
   const { pathname } = useLocation()
@@ -101,7 +102,7 @@ function AppRoutes() {
 export default function App() {
   return (
     <AppProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={routerBasename()}>
         <CoinsDisplayProvider>
           <AppRoutes />
         </CoinsDisplayProvider>
